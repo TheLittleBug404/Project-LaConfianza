@@ -1,16 +1,35 @@
 /**
  * Base de Datos Local con motor IndexedDB
- * Totalmente desacoplada y estructurada para migrar directamente a Supabase
+ * Estructurada en 12 tiendas y desacoplada para migración directa a Supabase
  */
 
 import { 
   DB_CONFIG, 
-  SEED_CUSTOMERS, 
+  SEED_ROLES,
   SEED_EMPLOYEES, 
+  SEED_CUSTOMERS, 
+  SEED_CATEGORIES,
+  SEED_ITEMS,
+  SEED_APPRAISALS,
   SEED_LOANS, 
-  SEED_PAYMENTS 
+  SEED_SCHEDULES,
+  SEED_CASHIER_SESSIONS,
+  SEED_PAYMENTS,
+  SEED_AUCTIONS
 } from './schema';
-import type { Customer, Employee, PawnLoan, PaymentTransaction } from '../types';
+import type { 
+  Customer, 
+  Employee, 
+  PawnLoan, 
+  PaymentTransaction,
+  SystemRole,
+  ItemCategoryRecord,
+  PledgeItem,
+  AppraisalHistoryRecord,
+  LoanPaymentSchedule,
+  CashierSessionRecord,
+  AuctionItemRecord
+} from '../types';
 
 class LocalDatabase {
   private dbPromise: Promise<IDBDatabase> | null = null;
@@ -23,7 +42,7 @@ class LocalDatabase {
   }
 
   /**
-   * Abre o actualiza la Base de Datos IndexedDB
+   * Abre o actualiza la Base de Datos IndexedDB con las 12 tiendas
    */
   private initDB(): Promise<IDBDatabase> {
     if (this.dbPromise) return this.dbPromise;
@@ -35,7 +54,19 @@ class LocalDatabase {
         request.onupgradeneeded = (event: IDBVersionChangeEvent) => {
           const db = (event.target as IDBOpenDBRequest).result;
 
-          // 1. Tabla de Clientes
+          // 1. Roles
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.ROLES)) {
+            db.createObjectStore(DB_CONFIG.STORES.ROLES, { keyPath: 'id' });
+          }
+
+          // 2. Empleados
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.EMPLOYEES)) {
+            const empStore = db.createObjectStore(DB_CONFIG.STORES.EMPLOYEES, { keyPath: 'id' });
+            empStore.createIndex('dni', 'dni', { unique: true });
+            empStore.createIndex('status', 'status', { unique: false });
+          }
+
+          // 3. Clientes
           if (!db.objectStoreNames.contains(DB_CONFIG.STORES.CUSTOMERS)) {
             const customerStore = db.createObjectStore(DB_CONFIG.STORES.CUSTOMERS, { keyPath: 'id' });
             customerStore.createIndex('dni', 'dni', { unique: true });
@@ -43,14 +74,25 @@ class LocalDatabase {
             customerStore.createIndex('fullName', 'fullName', { unique: false });
           }
 
-          // 2. Tabla de Empleados
-          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.EMPLOYEES)) {
-            const empStore = db.createObjectStore(DB_CONFIG.STORES.EMPLOYEES, { keyPath: 'id' });
-            empStore.createIndex('dni', 'dni', { unique: true });
-            empStore.createIndex('status', 'status', { unique: false });
+          // 4. Categorías de Prenda
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.CATEGORIES)) {
+            db.createObjectStore(DB_CONFIG.STORES.CATEGORIES, { keyPath: 'id' });
           }
 
-          // 3. Tabla de Préstamos y Empeños
+          // 5. Prendas
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.ITEMS)) {
+            const itemStore = db.createObjectStore(DB_CONFIG.STORES.ITEMS, { keyPath: 'id' });
+            itemStore.createIndex('code', 'code', { unique: false });
+            itemStore.createIndex('category', 'category', { unique: false });
+          }
+
+          // 6. Tasaciones Historial
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.APPRAISALS)) {
+            const appraisalStore = db.createObjectStore(DB_CONFIG.STORES.APPRAISALS, { keyPath: 'id' });
+            appraisalStore.createIndex('prendaId', 'prendaId', { unique: false });
+          }
+
+          // 7. Préstamos
           if (!db.objectStoreNames.contains(DB_CONFIG.STORES.LOANS)) {
             const loanStore = db.createObjectStore(DB_CONFIG.STORES.LOANS, { keyPath: 'id' });
             loanStore.createIndex('code', 'code', { unique: false });
@@ -59,7 +101,19 @@ class LocalDatabase {
             loanStore.createIndex('status', 'status', { unique: false });
           }
 
-          // 4. Tabla de Transacciones y Caja
+          // 8. Plan de Pagos
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.PAYMENT_SCHEDULES)) {
+            const scheduleStore = db.createObjectStore(DB_CONFIG.STORES.PAYMENT_SCHEDULES, { keyPath: 'id' });
+            scheduleStore.createIndex('prestamoId', 'prestamoId', { unique: false });
+          }
+
+          // 9. Sesiones de Caja
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.CASHIER_SESSIONS)) {
+            const sessionStore = db.createObjectStore(DB_CONFIG.STORES.CASHIER_SESSIONS, { keyPath: 'id' });
+            sessionStore.createIndex('fechaOperacion', 'fechaOperacion', { unique: false });
+          }
+
+          // 10. Pagos y Movimientos
           if (!db.objectStoreNames.contains(DB_CONFIG.STORES.PAYMENTS)) {
             const payStore = db.createObjectStore(DB_CONFIG.STORES.PAYMENTS, { keyPath: 'id' });
             payStore.createIndex('loanId', 'loanId', { unique: false });
@@ -67,7 +121,13 @@ class LocalDatabase {
             payStore.createIndex('date', 'date', { unique: false });
           }
 
-          // 5. Tabla de Configuración General (Presupuesto mensual, etc.)
+          // 11. Remates
+          if (!db.objectStoreNames.contains(DB_CONFIG.STORES.AUCTIONS)) {
+            const auctionStore = db.createObjectStore(DB_CONFIG.STORES.AUCTIONS, { keyPath: 'id' });
+            auctionStore.createIndex('prendaId', 'prendaId', { unique: false });
+          }
+
+          // 12. Configuración Global
           if (!db.objectStoreNames.contains(DB_CONFIG.STORES.CONFIG)) {
             db.createObjectStore(DB_CONFIG.STORES.CONFIG, { keyPath: 'key' });
           }
@@ -79,7 +139,7 @@ class LocalDatabase {
         };
 
         request.onerror = () => {
-          console.warn('Error al abrir IndexedDB local, operando en modo memoria/fallback.', request.error);
+          console.warn('Error al abrir IndexedDB local, operando en modo fallback.', request.error);
           reject(request.error);
         };
       } catch (err) {
@@ -130,26 +190,47 @@ class LocalDatabase {
   }
 
   /**
-   * Inicializa o restablece la Base de Datos con los 4 clientes de ejemplo
+   * Inicializa o restablece la Base de Datos con las 12 tablas
    */
   async seedInitialData(): Promise<{
-    customers: Customer[];
+    roles: SystemRole[];
     employees: Employee[];
+    customers: Customer[];
+    categories: ItemCategoryRecord[];
+    items: PledgeItem[];
+    appraisals: AppraisalHistoryRecord[];
     loans: PawnLoan[];
+    schedules: LoanPaymentSchedule[];
+    cashierSessions: CashierSessionRecord[];
     payments: PaymentTransaction[];
+    auctions: AuctionItemRecord[];
     monthlyBudget: number;
   }> {
-    await this.putMultipleInStore(DB_CONFIG.STORES.CUSTOMERS, SEED_CUSTOMERS);
+    await this.putMultipleInStore(DB_CONFIG.STORES.ROLES, SEED_ROLES);
     await this.putMultipleInStore(DB_CONFIG.STORES.EMPLOYEES, SEED_EMPLOYEES);
+    await this.putMultipleInStore(DB_CONFIG.STORES.CUSTOMERS, SEED_CUSTOMERS);
+    await this.putMultipleInStore(DB_CONFIG.STORES.CATEGORIES, SEED_CATEGORIES);
+    await this.putMultipleInStore(DB_CONFIG.STORES.ITEMS, SEED_ITEMS);
+    await this.putMultipleInStore(DB_CONFIG.STORES.APPRAISALS, SEED_APPRAISALS);
     await this.putMultipleInStore(DB_CONFIG.STORES.LOANS, SEED_LOANS);
+    await this.putMultipleInStore(DB_CONFIG.STORES.PAYMENT_SCHEDULES, SEED_SCHEDULES);
+    await this.putMultipleInStore(DB_CONFIG.STORES.CASHIER_SESSIONS, SEED_CASHIER_SESSIONS);
     await this.putMultipleInStore(DB_CONFIG.STORES.PAYMENTS, SEED_PAYMENTS);
+    await this.putMultipleInStore(DB_CONFIG.STORES.AUCTIONS, SEED_AUCTIONS);
     await this.setConfig('monthly_budget', 50000);
 
     return {
-      customers: SEED_CUSTOMERS,
+      roles: SEED_ROLES,
       employees: SEED_EMPLOYEES,
+      customers: SEED_CUSTOMERS,
+      categories: SEED_CATEGORIES,
+      items: SEED_ITEMS,
+      appraisals: SEED_APPRAISALS,
       loans: SEED_LOANS,
+      schedules: SEED_SCHEDULES,
+      cashierSessions: SEED_CASHIER_SESSIONS,
       payments: SEED_PAYMENTS,
+      auctions: SEED_AUCTIONS,
       monthlyBudget: 50000,
     };
   }
@@ -220,7 +301,7 @@ class LocalDatabase {
     }
   }
 
-  // --- MÉTODOS DE PAGOS Y CAJA ---
+  // --- MÉTODOS DE TRANSACCIONES / PAGOS ---
   async getPayments(): Promise<PaymentTransaction[]> {
     const list = await this.getAllFromStore<PaymentTransaction>(DB_CONFIG.STORES.PAYMENTS);
     if (!list || list.length === 0) {
@@ -243,27 +324,6 @@ class LocalDatabase {
   }
 
   // --- MÉTODOS DE CONFIGURACIÓN ---
-  async getConfig<T>(key: string, defaultValue: T): Promise<T> {
-    try {
-      const db = await this.initDB();
-      return new Promise((resolve) => {
-        const transaction = db.transaction(DB_CONFIG.STORES.CONFIG, 'readonly');
-        const store = transaction.objectStore(DB_CONFIG.STORES.CONFIG);
-        const req = store.get(key);
-        req.onsuccess = () => {
-          if (req.result && req.result.value !== undefined) {
-            resolve(req.result.value as T);
-          } else {
-            resolve(defaultValue);
-          }
-        };
-        req.onerror = () => resolve(defaultValue);
-      });
-    } catch {
-      return defaultValue;
-    }
-  }
-
   async setConfig(key: string, value: any): Promise<void> {
     try {
       const db = await this.initDB();
@@ -271,31 +331,64 @@ class LocalDatabase {
       const store = transaction.objectStore(DB_CONFIG.STORES.CONFIG);
       store.put({ key, value, updatedAt: new Date().toISOString() });
     } catch (err) {
-      console.warn(`Error guardando config ${key}:`, err);
+      console.warn(`Error al guardar configuración ${key}:`, err);
     }
   }
 
-  /**
-   * Exporta toda la base de datos a un objeto JSON (Copia de seguridad)
-   */
+  async getConfig<T>(key: string): Promise<T | null> {
+    try {
+      const db = await this.initDB();
+      return new Promise((resolve) => {
+        const transaction = db.transaction(DB_CONFIG.STORES.CONFIG, 'readonly');
+        const store = transaction.objectStore(DB_CONFIG.STORES.CONFIG);
+        const request = store.get(key);
+
+        request.onsuccess = () => {
+          if (request.result) {
+            resolve(request.result.value as T);
+          } else {
+            resolve(null);
+          }
+        };
+        request.onerror = () => resolve(null);
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  // --- RESPALDO TOTAL DE LAS 12 TABLAS ---
   async exportBackup(): Promise<string> {
-    const customers = await this.getCustomers();
+    const roles = await this.getAllFromStore(DB_CONFIG.STORES.ROLES);
     const employees = await this.getEmployees();
+    const customers = await this.getCustomers();
+    const categories = await this.getAllFromStore(DB_CONFIG.STORES.CATEGORIES);
+    const items = await this.getAllFromStore(DB_CONFIG.STORES.ITEMS);
+    const appraisals = await this.getAllFromStore(DB_CONFIG.STORES.APPRAISALS);
     const loans = await this.getLoans();
+    const schedules = await this.getAllFromStore(DB_CONFIG.STORES.PAYMENT_SCHEDULES);
+    const cashierSessions = await this.getAllFromStore(DB_CONFIG.STORES.CASHIER_SESSIONS);
     const payments = await this.getPayments();
-    const monthlyBudget = await this.getConfig('monthly_budget', 50000);
+    const auctions = await this.getAllFromStore(DB_CONFIG.STORES.AUCTIONS);
+    const config = await this.getAllFromStore(DB_CONFIG.STORES.CONFIG);
 
     const backup = {
-      database: DB_CONFIG.NAME,
       version: DB_CONFIG.VERSION,
+      schema: '12_tablas_empenos',
       exportedAt: new Date().toISOString(),
-      schemaCompatibleWith: 'Supabase PostgreSQL 15+',
       data: {
-        customers,
+        roles,
         employees,
+        customers,
+        categories,
+        items,
+        appraisals,
         loans,
+        schedules,
+        cashierSessions,
         payments,
-        monthlyBudget
+        auctions,
+        config
       }
     };
 
@@ -304,4 +397,3 @@ class LocalDatabase {
 }
 
 export const localDb = new LocalDatabase();
-

@@ -155,6 +155,19 @@ const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
 };
 
 export default function App() {
+  // Purga obligatoria inicial de datos anteriores para asegurar entorno 100% limpio en pruebas
+  if (!localStorage.getItem('nelly_clean_v3_done')) {
+    localStorage.removeItem('nelly_pawn_customers');
+    localStorage.removeItem('nelly_pawn_loans');
+    localStorage.removeItem('nelly_pawn_payments');
+    try {
+      window.indexedDB.deleteDatabase('NellyPawnShop_DB');
+    } catch {
+      // Ignorar si el navegador no permite borrado sincrono
+    }
+    localStorage.setItem('nelly_clean_v3_done', 'true');
+  }
+
   const [session, setSession] = useState<UserSession | null>(() => {
     try {
       const stored = localStorage.getItem('nelly_auth_session');

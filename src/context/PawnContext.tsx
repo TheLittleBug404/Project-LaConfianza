@@ -76,6 +76,36 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [payments, setPayments] = useState<PaymentTransaction[]>(() => StorageService.getPayments());
   const [monthlyBudget, setMonthlyBudgetState] = useState<number>(() => StorageService.getMonthlyBudget());
 
+  // Carga asíncrona inicial desde Supabase solo si hay registros reales en la nube
+  useEffect(() => {
+    let isMounted = true;
+    const syncFromSupabase = async () => {
+      try {
+        const [remoteCust, remoteEmp, remoteLoans, remotePay, remoteBudget] = await Promise.all([
+          StorageService.fetchCustomersAsync(),
+          StorageService.fetchEmployeesAsync(),
+          StorageService.fetchLoansAsync(),
+          StorageService.fetchPaymentsAsync(),
+          StorageService.fetchMonthlyBudgetAsync()
+        ]);
+
+        if (isMounted) {
+          // Solo sobrescribir si el usuario ya registró datos reales
+          setCustomers(remoteCust);
+          if (remoteEmp.length > 0) setEmployees(remoteEmp);
+          setLoans(remoteLoans);
+          setPayments(remotePay);
+          if (remoteBudget > 0) setMonthlyBudgetState(remoteBudget);
+        }
+      } catch (err) {
+        console.warn('Error sincronizando datos iniciales de Supabase:', err);
+      }
+    };
+
+    syncFromSupabase();
+    return () => { isMounted = false; };
+  }, []);
+
   const setMonthlyBudget = (amount: number) => {
     setMonthlyBudgetState(amount);
     StorageService.saveMonthlyBudget(amount);
@@ -114,13 +144,18 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  // Guardar en Storage ante cambios
+  // Guardar en Storage ante cambios (solo tras la carga inicial)
+  const isInitialMount = React.useRef(true);
   useEffect(() => {
+    if (isInitialMount.current) {
+      isInitialMount.current = false;
+      return;
+    }
     StorageService.saveCustomers(customers);
   }, [customers]);
 
   useEffect(() => {
-    StorageService.saveEmployees(employees);
+    // Los empleados solo se guardan cuando el admin explícitamente agrega/edita
   }, [employees]);
 
   useEffect(() => {

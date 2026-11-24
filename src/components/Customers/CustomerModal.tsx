@@ -130,10 +130,10 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   };
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
+    <div className="modal-overlay" style={{ zIndex: 1100 }} onClick={onClose}>
       <div 
         className="modal-content" 
-        style={{ maxWidth: mode === 'view' ? '800px' : '600px' }}
+        style={{ maxWidth: mode === 'view' ? '800px' : '600px', zIndex: 1101 }}
         onClick={(e) => e.stopPropagation()}
       >
         

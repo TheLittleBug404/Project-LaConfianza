@@ -26,6 +26,33 @@ export type PaymentType =
   | 'LIQUIDACION_TOTAL' 
   | 'DESEMBOLSO_INICIAL';
 
+export type UserRole = 'ADMIN' | 'EMPLEADO';
+
+// 1. Roles
+export interface SystemRole {
+  id: string;
+  nombre: string;
+  descripcion?: string;
+  creadoEl?: string;
+}
+
+// 2. Empleados
+export interface Employee {
+  id: string;
+  rolId?: string;
+  fullName: string;
+  dni: string;
+  phone: string;
+  salary: number; // Sueldo mensual en Bs.
+  workSchedule: string; // Horario de trabajo
+  primaryDuties: string; // Lo más necesario que debe hacer / funciones del puesto
+  notes?: string;
+  rol?: UserRole;
+  status: 'ACTIVO' | 'INACTIVO';
+  createdAt: string;
+}
+
+// 3. Clientes
 export interface Customer {
   id: string;
   dni: string;
@@ -45,9 +72,19 @@ export interface Customer {
   defaultedLoansCount: number;
 }
 
+// 4. Categorías de Prenda
+export interface ItemCategoryRecord {
+  id: string;
+  nombre: CollateralCategory;
+  porcentajeMaxPrestamo: number;
+  descripcion?: string;
+}
+
+// 5. Prenda
 export interface PledgeItem {
   id: string;
   code?: string; // Código único de prenda en BD (ej: PRD-2026-0884)
+  categoriaId?: string;
   category: CollateralCategory;
   name: string;
   description: string;
@@ -59,11 +96,25 @@ export interface PledgeItem {
   status: 'EN_CUSTODIA' | 'DEVUELTA' | 'EN_REMATE' | 'VENDIDA';
 }
 
+// 6. Historial de Tasaciones
+export interface AppraisalHistoryRecord {
+  id: string;
+  prendaId: string;
+  tasadorId?: string;
+  valorComercial: number;
+  prestamoSugerido: number;
+  fechaTasacion: string;
+  observaciones?: string;
+}
+
+// 7. Préstamos
 export interface PawnLoan {
   id: string;
   code: string; // Ej: A1, A2, A3...
   receiptCode: string; // Código de recibo correlativo: A1..A1000, B1..B1000
   customerId: string;
+  prendaId?: string;
+  empleadoId?: string; // Quien autorizó
   customerName: string;
   customerDni: string;
   customerAddress?: string;
@@ -91,11 +142,42 @@ export interface PawnLoan {
   notes?: string;
 }
 
+// 8. Plan de Pagos / Cuotas
+export interface LoanPaymentSchedule {
+  id: string;
+  prestamoId: string;
+  numeroPeriodo: number;
+  fechaLimitePago: string;
+  montoInteres: number;
+  estadoCuota: 'PENDIENTE' | 'PAGADO' | 'MORA';
+  pagadoEl?: string;
+}
+
+// 9. Sesión de Caja Diaria
+export interface CashierSessionRecord {
+  id: string;
+  empleadoId: string;
+  fechaOperacion: string;
+  saldoApertura: number;
+  totalIngresos: number;
+  totalEgresos: number;
+  saldoCierreTeorico: number;
+  saldoCierreReal?: number;
+  diferenciaCuadre: number;
+  estado: 'ABIERTA' | 'CERRADA';
+  abiertoEl: string;
+  cerradoEl?: string;
+  observaciones?: string;
+}
+
+// 10. Pagos / Movimientos
 export interface PaymentTransaction {
   id: string;
+  sesionCajaId?: string;
   loanId: string;
   loanCode: string;
   customerId: string;
+  empleadoId?: string;
   customerName: string;
   type: PaymentType;
   amount: number;
@@ -108,6 +190,28 @@ export interface PaymentTransaction {
   newDueDate?: string;
 }
 
+// 11. Remates
+export interface AuctionItemRecord {
+  id: string;
+  prendaId: string;
+  prestamoOrigenId?: string;
+  capitalAdeudado: number;
+  precioBaseSubasta: number;
+  precioVentaFinal?: number;
+  fechaIngresoRemate: string;
+  fechaVenta?: string;
+  compradorNombre?: string;
+  estadoRemate: 'EN_VITRINA' | 'VENDIDO' | 'FUNDICION';
+  observaciones?: string;
+}
+
+// 12. Configuración
+export interface AppConfigRecord {
+  key: string;
+  value: any;
+  updatedAt: string;
+}
+
 export interface FinancialStats {
   totalCapitalActive: number; // Capital en la calle
   totalVaultAppraisal: number; // Valor de prendas en bóveda
@@ -118,7 +222,6 @@ export interface FinancialStats {
   overdueCount: number;
   totalCustomersCount: number;
   defaultRate: number; // % morosidad
-  // Nuevos campos solicitados por Administrador
   monthlyLendingBudget: number; // Bolsa total para prestar en el mes
   monthlyLendedAmount: number; // Dinero prestado este mes
   monthlyRemainingBudget: number; // Saldo que aún se puede prestar
@@ -126,21 +229,6 @@ export interface FinancialStats {
   greenCustomersCount: number; // Clientes que pagan puntual (Verde)
   yellowCustomersCount: number; // Clientes regulares (Amarillo)
   redCustomersCount: number; // Clientes morosos (Rojo)
-}
-
-export type UserRole = 'ADMIN' | 'EMPLEADO';
-
-export interface Employee {
-  id: string;
-  fullName: string;
-  dni: string;
-  phone: string;
-  salary: number; // Sueldo mensual en Bs.
-  workSchedule: string; // Horario de trabajo
-  primaryDuties: string; // Lo más necesario que debe hacer / funciones del puesto
-  notes?: string;
-  status: 'ACTIVO' | 'INACTIVO';
-  createdAt: string;
 }
 
 export interface UserSession {
