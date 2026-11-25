@@ -13,7 +13,7 @@ import type {
   PledgeItem 
 } from '../types';
 import { StorageService } from '../services/storageService';
-import { generateReceiptCode } from '../utils/receiptCode';
+import { getNextReceiptCodeFromLoans } from '../utils/receiptCode';
 import { CustomDialogModal } from '../components/Common/CustomDialogModal';
 import type { DialogOptions } from '../components/Common/CustomDialogModal';
 import { AdminPasswordModal } from '../components/Common/AdminPasswordModal';
@@ -240,7 +240,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     StorageService.saveMonthlyBudget(amount);
   };
 
-  const nextReceiptCode = generateReceiptCode(loans.length);
+  const nextReceiptCode = getNextReceiptCodeFromLoans(loans);
 
   // Evaluar estado dinámico de préstamos al cargar (vencimientos vs fecha actual)
   useEffect(() => {
@@ -280,20 +280,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       isInitialMount.current = false;
       return;
     }
-    StorageService.saveCustomers(customers);
   }, [customers]);
-
-  useEffect(() => {
-    // Los empleados solo se guardan cuando el admin explícitamente agrega/edita
-  }, [employees]);
-
-  useEffect(() => {
-    StorageService.saveLoans(loans);
-  }, [loans]);
-
-  useEffect(() => {
-    StorageService.savePayments(payments);
-  }, [payments]);
 
   // Recalcular categoría y scoring de un cliente de forma 100% automática por el sistema
   const computeCustomerCategory = (
@@ -336,6 +323,19 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getCustomerById = (id: string) => customers.find(c => c.id === id);
 
   const addCustomer = (customerData: Omit<Customer, 'id' | 'registeredAt' | 'category' | 'creditScore' | 'totalLoansCount' | 'activeLoansCount' | 'totalPaidAmount' | 'totalBorrowedAmount' | 'defaultedLoansCount' | 'trafficColor'>) => {
+    // Si ya existe cliente con mismo Carnet/DNI, actualizarlo para no romper la restricción UNIQUE en Supabase
+    const cleanDni = customerData.dni ? customerData.dni.trim().toLowerCase() : '';
+    const existing = cleanDni ? customers.find(c => c.dni && c.dni.trim().toLowerCase() === cleanDni) : undefined;
+    if (existing) {
+      showDialog({
+        type: 'info',
+        title: 'Cliente ya registrado',
+        message: `El cliente con Carnet/DNI "${customerData.dni}" ya existía (${existing.fullName}). Se actualizaron sus datos.`
+      });
+      updateCustomer(existing.id, customerData);
+      return existing;
+    }
+
     startSaving('Guardando nuevo cliente en Supabase...');
     const newCustomer: Customer = {
       ...customerData,
@@ -474,8 +474,8 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const dueDate = new Date(startDate);
     dueDate.setDate(dueDate.getDate() + days);
 
-    // Código correlativo secuencial: A1, A2 ... A1000, B1 ... B1000
-    const receiptCode = generateReceiptCode(loans.length);
+    // Código correlativo secuencial garantizado no colisionante: A1, A2 ... A1000, B1 ... B1000
+    const receiptCode = getNextReceiptCodeFromLoans(loans);
     const code = receiptCode;
     const adminRate = loanData.adminExpensesRate ?? 12;
     const adminAmount = (loanData.loanAmount * adminRate) / 100;
@@ -485,18 +485,21 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       ? loanData.itemsData
       : (loanData.itemData ? [loanData.itemData] : []);
 
-    const pledgeItems: PledgeItem[] = rawItems.map((it, idx) => ({
-      id: `item-${Date.now()}-${idx}`,
-      code: it.code || `PRD-${Date.now().toString().slice(-6)}-${idx + 1}`,
-      category: it.category,
-      name: it.name,
-      description: it.description,
-      serialNumber: it.serialNumber,
-      condition: it.condition,
-      appraisalValue: it.appraisalValue,
-      storageLocation: it.storageLocation || 'Bóveda Principal',
-      status: 'EN_CUSTODIA'
-    }));
+    const pledgeItems: PledgeItem[] = rawItems.map((it, idx) => {
+      const itemId = `item-${Date.now()}-${idx}`;
+      return {
+        id: itemId,
+        code: it.code || `PRD-${Date.now().toString().slice(-8)}-${idx + 1}`,
+        category: it.category,
+        name: it.name,
+        description: it.description,
+        serialNumber: it.serialNumber,
+        condition: it.condition,
+        appraisalValue: it.appraisalValue,
+        storageLocation: it.storageLocation || 'Bóveda Principal',
+        status: 'EN_CUSTODIA'
+      };
+    });
 
     const totalAppraisal = pledgeItems.reduce((sum, it) => sum + it.appraisalValue, 0);
     const mainItemName = pledgeItems.length > 1
@@ -505,6 +508,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const primaryItem: PledgeItem = pledgeItems[0] || {
       id: `item-${Date.now()}`,
+      code: `PRD-${Date.now().toString().slice(-8)}`,
       category: 'OTROS',
       name: 'Prenda en Garantía',
       description: '',
@@ -546,7 +550,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // Actualizar cliente
-    setCustomers(prev => prev.map(c => {
+    const updatedCustomers = customers.map(c => {
       if (c.id === customer.id) {
         const updatedCustomer: Customer = {
           ...c,
@@ -558,7 +562,8 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ...updatedCustomer, category, creditScore, trafficColor };
       }
       return c;
-    }));
+    });
+    setCustomers(updatedCustomers);
 
     // Transacción de desembolso
     const initialDisbursement: PaymentTransaction = {
@@ -577,19 +582,22 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       notes: `Desembolso inicial por empeño de ${newLoan.item.name}`
     };
 
-    startSaving('Registrando préstamo y prenda en Supabase...');
+    startSaving('Registrando cliente, préstamo y prendas en Supabase...');
     const updatedLoans = [newLoan, ...loans];
     const updatedPayments = [initialDisbursement, ...payments];
 
     setLoans(updatedLoans);
     setPayments(updatedPayments);
 
-    Promise.all([
-      StorageService.saveLoans(updatedLoans),
-      StorageService.savePayments(updatedPayments)
-    ]).finally(() => {
-      setTimeout(stopSaving, 700);
-    });
+    // Guardar en orden estricto de claves foráneas:
+    // 1° Clientes -> 2° Prendas y Préstamos -> 3° Pagos (desembolso)
+    StorageService.saveCustomers(updatedCustomers)
+      .then(() => StorageService.saveLoans(updatedLoans))
+      .then(() => StorageService.savePayments(updatedPayments))
+      .catch(err => console.error('❌ Error sincronizando nuevo empeño:', err))
+      .finally(() => {
+        setTimeout(stopSaving, 700);
+      });
 
     return newLoan;
   };
@@ -655,13 +663,13 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedPayments = [transaction, ...payments];
     setPayments(updatedPayments);
 
-    Promise.all([
-      StorageService.savePayments(updatedPayments),
-      StorageService.saveLoans(updatedLoans),
-      StorageService.saveCustomers(updatedCustomers)
-    ]).finally(() => {
-      setTimeout(stopSaving, 600);
-    });
+    StorageService.saveLoans(updatedLoans)
+      .then(() => StorageService.savePayments(updatedPayments))
+      .then(() => StorageService.saveCustomers(updatedCustomers))
+      .catch(err => console.error('❌ Error sincronizando prórroga:', err))
+      .finally(() => {
+        setTimeout(stopSaving, 600);
+      });
   };
 
   const payCapitalAmortization = (loanId: string, amount: number, paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'QR', notes?: string) => {
@@ -727,13 +735,13 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedPayments = [transaction, ...payments];
     setPayments(updatedPayments);
 
-    Promise.all([
-      StorageService.savePayments(updatedPayments),
-      StorageService.saveLoans(updatedLoans),
-      StorageService.saveCustomers(updatedCustomers)
-    ]).finally(() => {
-      setTimeout(stopSaving, 600);
-    });
+    StorageService.saveLoans(updatedLoans)
+      .then(() => StorageService.savePayments(updatedPayments))
+      .then(() => StorageService.saveCustomers(updatedCustomers))
+      .catch(err => console.error('❌ Error sincronizando abono:', err))
+      .finally(() => {
+        setTimeout(stopSaving, 600);
+      });
   };
 
   const payFullLiquidation = (loanId: string, paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'QR', notes?: string) => {
@@ -799,13 +807,13 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const updatedPayments = [transaction, ...payments];
     setPayments(updatedPayments);
 
-    Promise.all([
-      StorageService.savePayments(updatedPayments),
-      StorageService.saveLoans(updatedLoans),
-      StorageService.saveCustomers(updatedCustomers)
-    ]).finally(() => {
-      setTimeout(stopSaving, 600);
-    });
+    StorageService.saveLoans(updatedLoans)
+      .then(() => StorageService.savePayments(updatedPayments))
+      .then(() => StorageService.saveCustomers(updatedCustomers))
+      .catch(err => console.error('❌ Error sincronizando liquidación:', err))
+      .finally(() => {
+        setTimeout(stopSaving, 600);
+      });
   };
 
   const sendToAuction = (loanId: string, notes?: string) => {

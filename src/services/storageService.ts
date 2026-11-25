@@ -17,6 +17,46 @@ const STORAGE_KEYS = {
   ADMIN_PASSWORD: 'nelly_pawn_admin_password',
 };
 
+// Categorías oficiales en Supabase para integridad de llaves foráneas
+const SEED_CATEGORIAS = [
+  { id: 'cat-joyeria-oro', nombre: 'JOYERIA_ORO', porcentaje_max_prestamo: 65, descripcion: 'Joyas de oro 14k, 18k y 24k' },
+  { id: 'cat-joyeria-plata', nombre: 'JOYERIA_PLATA', porcentaje_max_prestamo: 50, descripcion: 'Joyas y orfebrería en plata 925' },
+  { id: 'cat-electronica', nombre: 'ELECTRONICA', porcentaje_max_prestamo: 45, descripcion: 'Laptops, televisores, consolas y smartphones' },
+  { id: 'cat-herramientas', nombre: 'HERRAMIENTAS', porcentaje_max_prestamo: 40, descripcion: 'Maquinaria y herramientas eléctricas profesionales' },
+  { id: 'cat-vehiculos', nombre: 'VEHICULOS', porcentaje_max_prestamo: 50, descripcion: 'Automóviles y motocicletas con documentación en regla' },
+  { id: 'cat-otros', nombre: 'OTROS', porcentaje_max_prestamo: 40, descripcion: 'Otros artículos de valor' }
+];
+
+const CATEGORY_MAP: Record<string, string> = {
+  'JOYERIA_ORO': 'cat-joyeria-oro',
+  'JOYERIA_PLATA': 'cat-joyeria-plata',
+  'ELECTRODOMESTICOS': 'cat-electronica',
+  'LINEA_BLANCA': 'cat-electronica',
+  'TECNOLOGIA': 'cat-electronica',
+  'HERRAMIENTAS': 'cat-herramientas',
+  'VEHICULOS': 'cat-vehiculos',
+  'MAQUINARIA': 'cat-herramientas',
+  'INSTRUMENTOS_MUSICALES': 'cat-otros',
+  'RELOJES_ALTA_GAMA': 'cat-joyeria-oro',
+  'OTROS': 'cat-otros'
+};
+
+let categoriasSeeded = false;
+
+const ensureCategoriasSeeded = async () => {
+  if (categoriasSeeded) return;
+  try {
+    const { error } = await supabase.from('categorias_prenda').upsert(SEED_CATEGORIAS, { onConflict: 'id' });
+    if (!error) {
+      categoriasSeeded = true;
+    } else {
+      console.warn('Aviso asegurando categorias_prenda:', error.message);
+    }
+  } catch (err) {
+    console.warn('Aviso asegurando categorias_prenda:', err);
+  }
+};
+
 // Conversor de clientes entre Supabase (snake_case) y TypeScript (camelCase)
 const mapDbToCustomer = (row: any): Customer => ({
   id: row.id,
@@ -232,14 +272,40 @@ export const StorageService = {
   },
 
   saveCustomers: async (customers: Customer[]) => {
-    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
-    localDb.saveCustomers(customers);
+    // Desduplicar clientes por DNI en memoria antes de persistir
+    const uniqueByDni = new Map<string, Customer>();
+    customers.forEach(c => {
+      const cleanDni = c.dni ? c.dni.trim().toLowerCase() : c.id;
+      uniqueByDni.set(cleanDni, c);
+    });
+    const sanitizedCustomers = Array.from(uniqueByDni.values());
+
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(sanitizedCustomers));
+    localDb.saveCustomers(sanitizedCustomers);
 
     try {
-      const dbPayload = customers.map(mapCustomerToDb);
+      const dbPayload = sanitizedCustomers.map(mapCustomerToDb);
       const { data, error } = await supabase.from('clientes').upsert(dbPayload, { onConflict: 'id' }).select();
       if (error) {
         console.error('❌ Error al guardar en Supabase (clientes):', error.message, error.details || '');
+        // Si hay conflicto con clave única DNI (código 23505), reconciliar IDs con los existentes en Supabase
+        if (error.message?.includes('clientes_dni_key') || error.code === '23505') {
+          const { data: remoteData } = await supabase.from('clientes').select('id, dni');
+          if (remoteData && remoteData.length > 0) {
+            const remoteMap = new Map(remoteData.map(r => [r.dni?.trim().toLowerCase(), r.id]));
+            const reconciled = dbPayload.map(c => {
+              const cleanDni = c.dni ? c.dni.trim().toLowerCase() : '';
+              return {
+                ...c,
+                id: remoteMap.get(cleanDni) || c.id
+              };
+            });
+            const { error: retryErr } = await supabase.from('clientes').upsert(reconciled, { onConflict: 'id' });
+            if (!retryErr) {
+              console.log('✅ Clientes reconciliados con IDs de Supabase y sincronizados con éxito');
+            }
+          }
+        }
       } else {
         console.log('✅ Cliente sincronizado en Supabase con éxito:', data);
       }
@@ -305,16 +371,25 @@ export const StorageService = {
     localDb.saveLoans(loans);
 
     try {
+      // 0. Asegurar categorías base para integridad referencial de prendas
+      await ensureCategoriasSeeded();
+
       // 1. Primero asegurar que las prendas existan en la tabla prendas (integridad referencial)
       // Se guardan todas las prendas (individuales o múltiples por préstamo)
       const prendasPayload: any[] = [];
       loans.forEach(l => {
         if (l.items && l.items.length > 0) {
           l.items.forEach((it, idx) => {
+            const catId = CATEGORY_MAP[it.category] || 'cat-joyeria-oro';
+            const cleanItemId = it.id || `item-${l.id}-${idx}`;
+            // Código de prenda garantizado único con prefijo PRD-, NUNCA usar l.code (que es A1, A2...)
+            const cleanCode = (it.code && it.code.startsWith('PRD-'))
+              ? it.code
+              : `PRD-${cleanItemId.replace(/^item-/, '')}`;
             prendasPayload.push({
-              id: it.id || `item-${l.id}-${idx}`,
-              codigo: it.code || `PRD-${l.id.slice(-6)}-${idx + 1}`,
-              categoria_id: 'cat-joyeria-oro',
+              id: cleanItemId,
+              codigo: cleanCode,
+              categoria_id: catId,
               nombre: it.name || 'Prenda en Garantía',
               descripcion: it.description || null,
               numero_serie: it.serialNumber || null,
@@ -325,10 +400,15 @@ export const StorageService = {
             });
           });
         } else if (l.item) {
+          const catId = CATEGORY_MAP[l.item.category] || 'cat-joyeria-oro';
+          const cleanItemId = l.item.id || l.prendaId || ('item-' + l.id);
+          const cleanCode = (l.item.code && l.item.code.startsWith('PRD-'))
+            ? l.item.code
+            : `PRD-${cleanItemId.replace(/^item-/, '')}`;
           prendasPayload.push({
-            id: l.item.id || l.prendaId || ('item-' + l.id),
-            codigo: l.code || l.receiptCode || ('PRD-' + l.id),
-            categoria_id: 'cat-joyeria-oro',
+            id: cleanItemId,
+            codigo: cleanCode,
+            categoria_id: catId,
             nombre: l.item.name || 'Prenda en Garantía',
             descripcion: l.item.description || null,
             numero_serie: l.item.serialNumber || null,
@@ -341,10 +421,30 @@ export const StorageService = {
       });
 
       if (prendasPayload.length > 0) {
-        await supabase.from('prendas').upsert(prendasPayload, { onConflict: 'id' });
+        // Desduplicar prendas por ID y asegurar códigos únicos dentro del lote
+        const uniqueById = new Map<string, any>();
+        const usedCodes = new Set<string>();
+
+        prendasPayload.forEach(p => {
+          let code = p.codigo;
+          if (usedCodes.has(code)) {
+            code = `${code}-${Math.random().toString(36).substring(2, 6)}`;
+            p.codigo = code;
+          }
+          usedCodes.add(code);
+          uniqueById.set(p.id, p);
+        });
+
+        const uniquePrendas = Array.from(uniqueById.values());
+        const { error: prendaErr } = await supabase.from('prendas').upsert(uniquePrendas, { onConflict: 'id' });
+        if (prendaErr) {
+          console.error('❌ Error al guardar prendas en Supabase:', prendaErr.message, prendaErr.details || '');
+        } else {
+          console.log(`✅ ${uniquePrendas.length} Prenda(s) sincronizada(s) en Supabase con éxito`);
+        }
       }
 
-      // 2. Guardar el préstamo
+      // 2. Guardar el préstamo (claves foráneas cliente_id y prenda_id ya existen)
       const dbPayload = loans.map(mapLoanToDb);
       const { data, error } = await supabase.from('prestamos').upsert(dbPayload, { onConflict: 'id' }).select();
       if (error) {
@@ -481,7 +581,7 @@ export const StorageService = {
 
   fetchMonthlyBudgetAsync: async (): Promise<number> => {
     try {
-      const { data, error } = await supabase.from('configuracion').select('valor').eq('clave', 'monthly_budget').single();
+      const { data, error } = await supabase.from('configuracion').select('valor').eq('clave', 'monthly_budget').maybeSingle();
       if (!error && data && data.valor) {
         const val = Number(data.valor);
         localStorage.setItem(STORAGE_KEYS.BUDGET, val.toString());
@@ -532,7 +632,7 @@ export const StorageService = {
 
   fetchAdminPasswordAsync: async (): Promise<string> => {
     try {
-      const { data, error } = await supabase.from('configuracion').select('valor').eq('clave', 'admin_password').single();
+      const { data, error } = await supabase.from('configuracion').select('valor').eq('clave', 'admin_password').maybeSingle();
       if (!error && data && data.valor) {
         const val = String(data.valor);
         localStorage.setItem(STORAGE_KEYS.ADMIN_PASSWORD, val);

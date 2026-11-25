@@ -248,7 +248,7 @@ CREATE TABLE IF NOT EXISTS configuracion (
 );
 
 -- ================================================================================
--- INSERCIÓN DE DATOS DE EJEMPLO (SEED DATA COMPATIBLE)
+-- INSERCIÓN DE DATOS DE EJEMPLO
 -- ================================================================================
 
 -- Configuración Inicial

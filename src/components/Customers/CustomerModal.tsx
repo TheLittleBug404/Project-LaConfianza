@@ -30,7 +30,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   onCreateLoanForCustomer,
   userRole = 'ADMIN'
 }) => {
-  const { addCustomer, updateCustomer, deleteCustomer, loans, showDialog, requestAdminAuth } = usePawn();
+  const { customers, addCustomer, updateCustomer, deleteCustomer, loans, showDialog, requestAdminAuth } = usePawn();
   const [mode, setMode] = useState<'create' | 'edit' | 'view'>(initialMode);
 
   const [formData, setFormData] = useState<{
@@ -86,6 +86,18 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
     }
 
     if (mode === 'create') {
+      const cleanDni = formData.dni.trim().toLowerCase();
+      const existing = customers.find(c => c.dni && c.dni.trim().toLowerCase() === cleanDni);
+      if (existing) {
+        showDialog({
+          type: 'warning',
+          title: 'Cliente ya registrado',
+          message: `Ya existe un cliente con el carnet/DNI "${formData.dni}" (${existing.fullName}). Se actualizaron sus datos existentes para evitar duplicados.`
+        });
+        updateCustomer(existing.id, formData);
+        onClose();
+        return;
+      }
       addCustomer(formData);
       onClose();
     } else if (mode === 'edit' && customer) {
