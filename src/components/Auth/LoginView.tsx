@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Lock, LogIn, AlertCircle, Shield, Briefcase } from 'lucide-react';
 import { AppTitles } from '../../constants/pageTitles';
 import logoImg from '../../assets/logo.png';
 import type { UserSession, UserRole } from '../../types';
+import { StorageService } from '../../services/storageService';
 
 interface LoginViewProps {
   onLoginSuccess: (session: UserSession) => void;
@@ -11,16 +12,25 @@ interface LoginViewProps {
 export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
   // Selector directo de los 2 roles: ADMIN o EMPLEADO
   const [selectedRole, setSelectedRole] = useState<UserRole>('ADMIN');
-  const [password, setPassword] = useState('1234');
+  const [password, setPassword] = useState(() => StorageService.getAdminPassword());
   const [error, setError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    StorageService.fetchAdminPasswordAsync().then((adminPass) => {
+      if (adminPass) {
+        setPassword((prev) => (prev === '1234' ? adminPass : prev));
+      }
+    });
+  }, []);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
 
-    if (password !== '1234') {
-      setError('Contraseña incorrecta. Escriba 1234');
+    const currentAdminPass = StorageService.getAdminPassword();
+    if (password !== currentAdminPass) {
+      setError('Contraseña incorrecta. Verifique la clave ingresada.');
       return;
     }
 
@@ -185,7 +195,7 @@ export const LoginView: React.FC<LoginViewProps> = ({ onLoginSuccess }) => {
                 marginBottom: '8px'
               }}
             >
-              2. Clave de acceso (1234):
+              2. Clave de acceso:
             </label>
 
             <div style={{ position: 'relative' }}>

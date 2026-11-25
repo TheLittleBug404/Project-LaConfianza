@@ -30,7 +30,7 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   onCreateLoanForCustomer,
   userRole = 'ADMIN'
 }) => {
-  const { addCustomer, updateCustomer, deleteCustomer, loans } = usePawn();
+  const { addCustomer, updateCustomer, deleteCustomer, loans, showDialog, requestAdminAuth } = usePawn();
   const [mode, setMode] = useState<'create' | 'edit' | 'view'>(initialMode);
 
   const [formData, setFormData] = useState<{
@@ -77,7 +77,11 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.dni || !formData.fullName || !formData.phone) {
-      alert('Carnet (CI/DNI), Nombre Completo y Teléfono son obligatorios.');
+      showDialog({
+        type: 'warning',
+        title: 'Campos requeridos',
+        message: 'Carnet (CI/DNI), Nombre Completo y Teléfono son obligatorios.'
+      });
       return;
     }
 
@@ -306,25 +310,36 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                       >
                         <div>
                           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <span className="font-mono" style={{ fontSize: '0.82rem', fontWeight: 700, color: '#F59E0B' }}>
-                              {loan.code}
+                            <span 
+                              style={{ 
+                                fontSize: '0.88rem', 
+                                fontWeight: 800, 
+                                color: '#f59e0b', 
+                                backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                                border: '1.5px solid #f59e0b',
+                                padding: '3px 8px',
+                                borderRadius: '6px',
+                                fontFamily: 'monospace'
+                              }}
+                            >
+                              Contrato N° {loan.code}
                             </span>
-                            <span className={`badge status-${loan.status.toLowerCase().replace('_', '-')}`} style={{ fontSize: '0.7rem' }}>
+                            <span className={`badge status-${loan.status.toLowerCase().replace('_', '-')}`} style={{ fontSize: '0.75rem' }}>
                               {loan.status.replace('_', ' ')}
                             </span>
                           </div>
-                          <span style={{ fontSize: '0.85rem', color: '#FFFFFF', fontWeight: 600, display: 'block', marginTop: '2px' }}>
+                          <span style={{ fontSize: '0.92rem', color: '#FFFFFF', fontWeight: 700, display: 'block', marginTop: '6px' }}>
                             {loan.item.name}
                           </span>
-                          <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                            Avalúo: S/ {loan.item.appraisalValue} | Vence: {new Date(loan.dueDate).toLocaleDateString('es-PE')}
+                          <span style={{ fontSize: '0.82rem', color: 'var(--text-muted)' }}>
+                            Avalúo: Bs. {loan.item.appraisalValue} | Vence: {new Date(loan.dueDate).toLocaleDateString('es-PE')}
                           </span>
                         </div>
 
                         <div style={{ textAlign: 'right' }}>
                           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>Saldo Deudor</span>
-                          <strong style={{ fontSize: '1rem', color: '#FBBF24' }}>
-                            S/ {loan.remainingCapital.toLocaleString('es-PE')}
+                          <strong style={{ fontSize: '1.1rem', color: '#FBBF24' }}>
+                            Bs. {loan.remainingCapital.toLocaleString('es-PE')}
                           </strong>
                         </div>
                       </div>
@@ -444,15 +459,28 @@ export const CustomerModal: React.FC<CustomerModalProps> = ({
                   type="button"
                   className="btn btn-danger btn-sm"
                   onClick={() => {
-                    if (window.confirm(`¿Está seguro de eliminar definitivamente al cliente "${customer.fullName}"?\n\nEsta acción no se puede deshacer.`)) {
-                      const res = deleteCustomer(customer.id);
-                      if (!res.success) {
-                        alert(res.message);
-                      } else {
-                        alert('Cliente eliminado exitosamente.');
-                        onClose();
+                    requestAdminAuth({
+                      title: 'Eliminar Cliente Definitivamente',
+                      message: `¿Está seguro de eliminar definitivamente al cliente "${customer.fullName}"?\n\nEsta acción es irreversible.\nPara proceder, ingrese su código de Administrador:`,
+                      confirmLabel: 'Confirmar y Eliminar',
+                      onSuccess: () => {
+                        const res = deleteCustomer(customer.id);
+                        if (!res.success) {
+                          showDialog({
+                            type: 'danger',
+                            title: 'No se pudo eliminar',
+                            message: res.message || 'Error al eliminar cliente'
+                          });
+                        } else {
+                          showDialog({
+                            type: 'success',
+                            title: 'Cliente Eliminado',
+                            message: 'Cliente eliminado exitosamente con autorización de Administrador.'
+                          });
+                          onClose();
+                        }
                       }
-                    }
+                    });
                   }}
                 >
                   <Trash2 size={16} />

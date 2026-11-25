@@ -17,7 +17,7 @@ import { EmployeeModal } from './EmployeeModal';
 import type { Employee } from '../../types';
 
 export const EmployeeList: React.FC = () => {
-  const { employees, deleteEmployee } = usePawn();
+  const { employees, deleteEmployee, showDialog } = usePawn();
   const [searchTerm, setSearchTerm] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
@@ -43,10 +43,21 @@ export const EmployeeList: React.FC = () => {
   };
 
   const handleDelete = (emp: Employee) => {
-    if (window.confirm(`¿Está seguro de eliminar al empleado "${emp.fullName}" (CI: ${emp.dni})?\n\nEsta acción no se puede deshacer.`)) {
-      deleteEmployee(emp.id);
-      alert('Empleado eliminado correctamente.');
-    }
+    showDialog({
+      type: 'confirm',
+      title: 'Eliminar Empleado',
+      message: `¿Está seguro de eliminar al empleado "${emp.fullName}" (CI: ${emp.dni})?\n\nEsta acción no se puede deshacer.`,
+      confirmText: 'Sí, Eliminar',
+      cancelText: 'Cancelar',
+      onConfirm: () => {
+        deleteEmployee(emp.id);
+        showDialog({
+          type: 'success',
+          title: 'Empleado Eliminado',
+          message: 'Empleado eliminado correctamente.'
+        });
+      }
+    });
   };
 
   const totalPayroll = employees

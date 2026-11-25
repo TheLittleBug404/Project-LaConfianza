@@ -8,11 +8,14 @@ import { CustomerModal } from './components/Customers/CustomerModal';
 import { LoanList } from './components/Loans/LoanList';
 import { NewLoanModal } from './components/Loans/NewLoanModal';
 import { LoanDetailModal } from './components/Loans/LoanDetailModal';
+import { PaymentModal } from './components/Loans/PaymentModal';
 import { VaultInventory } from './components/Inventory/VaultInventory';
 import { CashierView } from './components/Cashier/CashierView';
 import { EmployeeList } from './components/Employees/EmployeeList';
 import { TicketModal } from './components/Common/TicketModal';
+import { LoadingOverlay } from './components/Common/LoadingOverlay';
 import { LoginView } from './components/Auth/LoginView';
+import { usePawn } from './context/PawnContext';
 import type { Customer, PawnLoan, UserSession } from './types';
 
 interface MainAppProps {
@@ -21,6 +24,7 @@ interface MainAppProps {
 }
 
 const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
+  const { isSaving, savingMessage } = usePawn();
   const isAdmin = currentUser.role === 'ADMIN';
   const [selectedTab, setSelectedTab] = useState<ActiveTab>(() => isAdmin ? 'dashboard' : 'loans');
   const activeTab: ActiveTab = isAdmin ? selectedTab : 'loans';
@@ -38,9 +42,15 @@ const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
   
   const [selectedLoanForDetail, setSelectedLoanForDetail] = useState<PawnLoan | null>(null);
   const [selectedLoanForTicket, setSelectedLoanForTicket] = useState<PawnLoan | null>(null);
+  const [selectedLoanForPayment, setSelectedLoanForPayment] = useState<PawnLoan | null>(null);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
   const [preselectedCustomerForLoan, setPreselectedCustomerForLoan] = useState<Customer | null>(null);
 
   // Handlers
+  const handleOpenPaymentModal = (loan?: PawnLoan | null) => {
+    setSelectedLoanForPayment(loan || null);
+    setIsPaymentModalOpen(true);
+  };
   const handleOpenNewCustomer = () => {
     setSelectedCustomer(null);
     setCustomerModalMode('create');
@@ -69,6 +79,7 @@ const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
         setActiveTab={setActiveTab}
         onOpenNewLoan={() => handleOpenNewLoan(null)}
         onOpenNewCustomer={handleOpenNewCustomer}
+        onOpenPaymentModal={() => handleOpenPaymentModal(null)}
         currentUser={currentUser}
         onLogout={onLogout}
       />
@@ -88,6 +99,7 @@ const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
           <LoanList
             onSelectLoan={(loan) => setSelectedLoanForDetail(loan)}
             onOpenNewLoan={() => handleOpenNewLoan(null)}
+            onOpenPaymentModal={(loan) => handleOpenPaymentModal(loan)}
           />
         )}
 
@@ -150,6 +162,17 @@ const MainApp: React.FC<MainAppProps> = ({ currentUser, onLogout }) => {
         onClose={() => setSelectedLoanForTicket(null)}
         loan={selectedLoanForTicket}
       />
+
+      {/* Payment / Prórroga / Cuota Modal */}
+      <PaymentModal
+        isOpen={isPaymentModalOpen}
+        onClose={() => setIsPaymentModalOpen(false)}
+        preselectedLoan={selectedLoanForPayment}
+        onOpenTicket={(loan) => setSelectedLoanForTicket(loan)}
+      />
+
+      {/* Global Loading Overlay para bloquear pantalla ante guardados */}
+      <LoadingOverlay isLoading={isSaving} message={savingMessage} />
     </div>
   );
 };

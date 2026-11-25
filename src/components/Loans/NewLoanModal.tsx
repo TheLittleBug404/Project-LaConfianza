@@ -8,11 +8,24 @@ import {
   CheckCircle2, 
   Clock, 
   FileText,
-  UserPlus
+  UserPlus,
+  Trash2,
+  Layers
 } from 'lucide-react';
 import { usePawn } from '../../context/PawnContext';
 import type { Customer, CollateralCategory, ItemCondition, PawnLoan, UserRole } from '../../types';
 import { getCustomerRatingMeta } from '../../utils/customerRating';
+
+interface CollateralItemInput {
+  id: string;
+  category: CollateralCategory;
+  name: string;
+  description: string;
+  serialNumber: string;
+  condition: ItemCondition;
+  appraisalValue: number;
+  storageLocation: string;
+}
 
 interface NewLoanModalProps {
   isOpen: boolean;
@@ -31,19 +44,51 @@ export const NewLoanModal: React.FC<NewLoanModalProps> = ({
   onOpenNewCustomer,
   userRole = 'ADMIN'
 }) => {
-  const { customers, loans, stats, createPawnLoan, nextReceiptCode } = usePawn();
+  const { customers, loans, stats, createPawnLoan, nextReceiptCode, showDialog } = usePawn();
 
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
   const [customerSearch, setCustomerSearch] = useState('');
 
-  // Item Form
-  const [category, setCategory] = useState<CollateralCategory>('JOYERIA_ORO');
-  const [itemName, setItemName] = useState('');
-  const [itemDesc, setItemDesc] = useState('');
-  const serialNumber = '';
-  const [condition, setCondition] = useState<ItemCondition>('EXCELENTE');
-  const [appraisalValue, setAppraisalValue] = useState<number>(1000);
-  const [storageLocation, setStorageLocation] = useState('Bóveda Principal');
+  // Lista dinámica de Prendas (1, 2, 3 o más prendas por empeño)
+  const [collateralItems, setCollateralItems] = useState<CollateralItemInput[]>([
+    {
+      id: 'prenda-1',
+      category: 'JOYERIA_ORO',
+      name: '',
+      description: '',
+      serialNumber: '',
+      condition: 'EXCELENTE',
+      appraisalValue: 1000,
+      storageLocation: 'Bóveda Principal'
+    }
+  ]);
+
+  const handleAddItem = () => {
+    setCollateralItems(prev => [
+      ...prev,
+      {
+        id: `prenda-${Date.now()}-${prev.length + 1}`,
+        category: 'JOYERIA_ORO',
+        name: '',
+        description: '',
+        serialNumber: '',
+        condition: 'EXCELENTE',
+        appraisalValue: 500,
+        storageLocation: 'Bóveda Principal'
+      }
+    ]);
+  };
+
+  const handleRemoveItem = (id: string) => {
+    if (collateralItems.length <= 1) return;
+    setCollateralItems(prev => prev.filter(it => it.id !== id));
+  };
+
+  const handleUpdateItem = (id: string, field: keyof CollateralItemInput, val: any) => {
+    setCollateralItems(prev => prev.map(it => it.id === id ? { ...it, [field]: val } : it));
+  };
+
+  const totalAppraisalValue = collateralItems.reduce((sum, it) => sum + (Number(it.appraisalValue) || 0), 0);
 
   // Loan Terms Form
   const [loanAmount, setLoanAmount] = useState<number>(1000);
@@ -62,13 +107,13 @@ export const NewLoanModal: React.FC<NewLoanModalProps> = ({
     }
   }, [preselectedCustomer, isOpen]);
 
-  // Sugerencia de monto según tasación
+  // Sugerencia de monto según tasación total
   useEffect(() => {
-    if (appraisalValue > 0 && loanAmount === 1000) {
-      const suggestedMax = Math.round(appraisalValue * 0.70);
+    if (totalAppraisalValue > 0) {
+      const suggestedMax = Math.round(totalAppraisalValue * 0.70);
       setLoanAmount(suggestedMax);
     }
-  }, [appraisalValue]);
+  }, [totalAppraisalValue]);
 
   if (!isOpen) return null;
 
@@ -113,63 +158,103 @@ export const NewLoanModal: React.FC<NewLoanModalProps> = ({
     e.preventDefault();
 
     if (!selectedCustomerId) {
-      alert('Debe seleccionar a un cliente titular.');
+      showDialog({
+        title: 'Cliente Requerido',
+        message: 'Debe seleccionar a un cliente titular para el préstamo.',
+        type: 'warning'
+      });
       return;
     }
 
-    if (!itemName.trim() || appraisalValue <= 0 || loanAmount <= 0) {
-      alert('Por favor complete la prenda y el monto del préstamo.');
+    const invalidItem = collateralItems.find(it => !it.name.trim() || Number(it.appraisalValue) <= 0);
+    if (invalidItem) {
+      showDialog({
+        title: 'Datos Incompletos de Prendas',
+        message: 'Por favor complete el nombre y el valor de tasación de todas las prendas registradas.',
+        type: 'warning'
+      });
+      return;
+    }
+
+    if (loanAmount <= 0) {
+      showDialog({
+        title: 'Monto Inválido',
+        message: 'Por favor ingrese un monto de préstamo válido mayor a 0.',
+        type: 'warning'
+      });
       return;
     }
 
     // Regla de fondos mensuales
     if (isOverBudget && !budgetOverflowConfirmed) {
-      alert(`ALERTA: El préstamo de Bs. ${loanAmount} supera el fondo disponible de este mes (Quedan Bs. ${remainingBudget}). Marque la casilla de confirmación para continuar.`);
+      showDialog({
+        title: 'Fondo Mensual Excedido',
+        message: `ALERTA: El préstamo de Bs. ${loanAmount} supera el fondo disponible de este mes (Quedan Bs. ${remainingBudget}). Marque la casilla de confirmación para continuar.`,
+        type: 'warning'
+      });
       return;
     }
 
     // Regla de semáforo rojo
     if (isCustomerRed) {
       if (isEmployee) {
-        alert('OPERACIÓN DENEGADA: Un empleado NO puede otorgar préstamos a un Cliente en ROJO (Moroso / No paga). Requiere autorización directa del Administrador.');
+        showDialog({
+          title: 'Operación Denegada',
+          message: 'OPERACIÓN DENEGADA: Un empleado NO puede otorgar préstamos a un Cliente en ROJO (Moroso / No paga). Requiere autorización directa del Administrador.',
+          type: 'danger'
+        });
         return;
       }
       if (!riskAuthConfirmed) {
-        alert('ATENCIÓN: Debe marcar la casilla de autorización como Administrador para otorgar este préstamo a un cliente en ROJO.');
+        showDialog({
+          title: 'Autorización Requerida',
+          message: 'ATENCIÓN: Debe marcar la casilla de autorización como Administrador para otorgar este préstamo a un cliente en ROJO.',
+          type: 'warning'
+        });
         return;
       }
     }
+
+    const executeLoanCreation = () => {
+      const createdLoan = createPawnLoan({
+        customerId: selectedCustomerId,
+        itemsData: collateralItems.map((it, idx) => ({
+          code: `PRD-${Date.now().toString().slice(-6)}-${idx + 1}`,
+          category: it.category,
+          name: it.name,
+          description: it.description,
+          serialNumber: it.serialNumber,
+          condition: it.condition,
+          appraisalValue: Number(it.appraisalValue),
+          storageLocation: it.storageLocation,
+        })),
+        loanAmount,
+        monthlyInterestRate: monthlyRate,
+        adminExpensesRate,
+        termDays,
+        termMonths: Math.max(1, Math.round(termDays / 30)),
+        gracePeriodDays,
+        notes,
+      });
+
+      onSuccessCreated(createdLoan);
+      onClose();
+    };
 
     // Regla de cliente amarillo con deuda previa
     if (isCustomerYellow && isEnlargingDebt && !riskAuthConfirmed) {
-      if (!window.confirm(`El cliente tiene historial regular (AMARILLO) y ya mantiene una deuda activa de Bs. ${existingDebt}. ¿Confirma que desea agrandar su deuda?`)) {
-        return;
-      }
+      showDialog({
+        title: 'Historial Regular (Amarillo)',
+        message: `El cliente tiene historial regular (AMARILLO) y ya mantiene una deuda activa de Bs. ${existingDebt}. ¿Confirma que desea agrandar su deuda?`,
+        type: 'confirm',
+        confirmText: 'Sí, Continuar',
+        cancelText: 'Cancelar',
+        onConfirm: executeLoanCreation
+      });
+      return;
     }
 
-    const createdLoan = createPawnLoan({
-      customerId: selectedCustomerId,
-      itemData: {
-        code: `PRD-${Date.now().toString().slice(-6)}`,
-        category,
-        name: itemName,
-        description: itemDesc,
-        serialNumber,
-        condition,
-        appraisalValue,
-        storageLocation,
-      },
-      loanAmount,
-      monthlyInterestRate: monthlyRate,
-      adminExpensesRate,
-      termDays,
-      termMonths: Math.max(1, Math.round(termDays / 30)),
-      gracePeriodDays,
-      notes,
-    });
-
-    onSuccessCreated(createdLoan);
-    onClose();
+    executeLoanCreation();
   };
 
   return (
@@ -469,90 +554,187 @@ export const NewLoanModal: React.FC<NewLoanModalProps> = ({
               )}
             </div>
 
-            {/* SECCIÓN 2: DATOS DE LA PRENDA */}
+            {/* SECCIÓN 2: DATOS DE LAS PRENDAS (SOPORTA 1, 2, 3 O MÁS PRENDAS) */}
             <div className="card" style={{ padding: '20px', backgroundColor: '#131f37' }}>
-              <span style={{ fontSize: '1.1rem', fontWeight: 800, color: '#f59e0b', display: 'block', marginBottom: '14px' }}>
-                2. Prenda a Dejar en Garantía
-              </span>
-
-              <div className="grid-2">
-                <div className="input-group">
-                  <label className="input-label">Tipo de Prenda</label>
-                  <select
-                    className="input-control"
-                    value={category}
-                    onChange={(e) => setCategory(e.target.value as CollateralCategory)}
-                  >
-                    <option value="JOYERIA_ORO">Joyas de Oro</option>
-                    <option value="JOYERIA_PLATA">Joyas de Plata</option>
-                    <option value="ELECTRONICA">Electrónica / Computadoras</option>
-                    <option value="HERRAMIENTAS">Herramientas Industriales</option>
-                    <option value="VEHICULOS">Vehículos / Motos</option>
-                    <option value="ELECTRODOMESTICOS">Electrodomésticos</option>
-                    <option value="OTROS">Otros Bienes</option>
-                  </select>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                <div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Layers size={22} color="#f59e0b" />
+                    <span style={{ fontSize: '1.15rem', fontWeight: 800, color: '#f59e0b' }}>
+                      2. Prendas a Dejar en Garantía ({collateralItems.length} {collateralItems.length === 1 ? 'Prenda' : 'Prendas'})
+                    </span>
+                  </div>
+                  <p style={{ color: '#94a3b8', fontSize: '0.88rem', margin: '4px 0 0 0' }}>
+                    Si el cliente trae 2, 3 o más prendas, agréguelas aquí. Todas se guardarán en Supabase.
+                  </p>
                 </div>
 
-                <div className="input-group">
-                  <label className="input-label">Nombre o Título de la Prenda *</label>
-                  <input
-                    type="text"
-                    className="input-control"
-                    placeholder="Ej. Anillo de Oro 18k con piedra"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    required
-                  />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                  <div style={{
+                    backgroundColor: '#091020',
+                    border: '2px solid #10b981',
+                    borderRadius: '8px',
+                    padding: '6px 14px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                  }}>
+                    <span style={{ fontSize: '0.85rem', color: '#cbd5e1' }}>Avalúo Total:</span>
+                    <strong style={{ fontSize: '1.15rem', color: '#34d399' }}>
+                      Bs. {totalAppraisalValue.toLocaleString('es-PE')}
+                    </strong>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="btn btn-yellow btn-sm"
+                    onClick={handleAddItem}
+                    style={{ fontWeight: 800, display: 'flex', alignItems: 'center', gap: '6px', padding: '8px 14px' }}
+                  >
+                    <Plus size={16} />
+                    <span>+ Agregar Otra Prenda</span>
+                  </button>
                 </div>
               </div>
 
-              <div className="input-group">
-                <label className="input-label">Detalles / Estado de la Prenda</label>
-                <textarea
-                  className="input-control"
-                  rows={2}
-                  placeholder="Detalles físicos, peso en gramos, marca, detalles de conservación..."
-                  value={itemDesc}
-                  onChange={(e) => setItemDesc(e.target.value)}
-                />
+              {/* Lista dinámica de prendas */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {collateralItems.map((item, index) => (
+                  <div
+                    key={item.id}
+                    style={{
+                      backgroundColor: '#091020',
+                      border: '2px solid #2d4573',
+                      borderRadius: '12px',
+                      padding: '16px 18px'
+                    }}
+                  >
+                    {/* Encabezado individual de la Prenda */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', borderBottom: '1px solid #1e293b', paddingBottom: '10px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <span style={{
+                          backgroundColor: '#3b82f6',
+                          color: '#ffffff',
+                          fontWeight: 800,
+                          fontSize: '0.82rem',
+                          padding: '3px 8px',
+                          borderRadius: '6px'
+                        }}>
+                          Prenda #{index + 1}
+                        </span>
+                        <strong style={{ color: '#ffffff', fontSize: '1rem' }}>
+                          {item.name || `Prenda ${index + 1}`}
+                        </strong>
+                      </div>
+
+                      {collateralItems.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveItem(item.id)}
+                          className="btn btn-danger btn-sm"
+                          style={{ padding: '4px 10px', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: '4px' }}
+                          title="Quitar esta prenda del empeño"
+                        >
+                          <Trash2 size={14} />
+                          <span>Quitar</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="grid-2">
+                      <div className="input-group">
+                        <label className="input-label">Tipo de Prenda</label>
+                        <select
+                          className="input-control"
+                          value={item.category}
+                          onChange={(e) => handleUpdateItem(item.id, 'category', e.target.value as CollateralCategory)}
+                        >
+                          <option value="JOYERIA_ORO">Joyas de Oro</option>
+                          <option value="JOYERIA_PLATA">Joyas de Plata</option>
+                          <option value="ELECTRONICA">Electrónica / Computadoras</option>
+                          <option value="HERRAMIENTAS">Herramientas Industriales</option>
+                          <option value="VEHICULOS">Vehículos / Motos</option>
+                          <option value="ELECTRODOMESTICOS">Electrodomésticos</option>
+                          <option value="OTROS">Otros Bienes</option>
+                        </select>
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">Nombre o Título de la Prenda *</label>
+                        <input
+                          type="text"
+                          className="input-control"
+                          placeholder="Ej. Anillo de Oro 18k / Taladro Bosch..."
+                          value={item.name}
+                          onChange={(e) => handleUpdateItem(item.id, 'name', e.target.value)}
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    <div className="input-group" style={{ marginTop: '10px' }}>
+                      <label className="input-label">Detalles / Peso / Estado de la Prenda</label>
+                      <textarea
+                        className="input-control"
+                        rows={2}
+                        placeholder="Detalles físicos, peso en gramos, marca, detalles de conservación..."
+                        value={item.description}
+                        onChange={(e) => handleUpdateItem(item.id, 'description', e.target.value)}
+                      />
+                    </div>
+
+                    <div className="grid-3" style={{ marginTop: '10px' }}>
+                      <div className="input-group">
+                        <label className="input-label">Valor de Tasación Real (Bs.) *</label>
+                        <input
+                          type="number"
+                          min="1"
+                          className="input-control"
+                          value={item.appraisalValue || ''}
+                          onChange={(e) => handleUpdateItem(item.id, 'appraisalValue', Number(e.target.value))}
+                          required
+                        />
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">Condición Física</label>
+                        <select
+                          className="input-control"
+                          value={item.condition}
+                          onChange={(e) => handleUpdateItem(item.id, 'condition', e.target.value as ItemCondition)}
+                        >
+                          <option value="EXCELENTE">Excelente / Como Nuevo</option>
+                          <option value="BUENO">Bueno</option>
+                          <option value="REGULAR">Regular / Desgaste Normal</option>
+                        </select>
+                      </div>
+
+                      <div className="input-group">
+                        <label className="input-label">Ubicación en Bóveda</label>
+                        <input
+                          type="text"
+                          className="input-control"
+                          placeholder="Caja A1, Estante 3..."
+                          value={item.storageLocation}
+                          onChange={(e) => handleUpdateItem(item.id, 'storageLocation', e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
 
-              <div className="grid-3">
-                <div className="input-group">
-                  <label className="input-label">Valor de Tasación Real (Bs.)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    className="input-control"
-                    value={appraisalValue || ''}
-                    onChange={(e) => setAppraisalValue(Number(e.target.value))}
-                    required
-                  />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Condición Física</label>
-                  <select
-                    className="input-control"
-                    value={condition}
-                    onChange={(e) => setCondition(e.target.value as ItemCondition)}
-                  >
-                    <option value="EXCELENTE">Excelente / Como Nuevo</option>
-                    <option value="BUENO">Bueno</option>
-                    <option value="REGULAR">Regular / Desgaste Normal</option>
-                  </select>
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Ubicación en Bóveda</label>
-                  <input
-                    type="text"
-                    className="input-control"
-                    placeholder="Caja A1, Estante 3..."
-                    value={storageLocation}
-                    onChange={(e) => setStorageLocation(e.target.value)}
-                  />
-                </div>
+              {/* Botón para registrar otra prenda */}
+              <div style={{ marginTop: '14px' }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleAddItem}
+                  style={{ width: '100%', padding: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px', border: '2px dashed #3b82f6', borderRadius: '10px' }}
+                >
+                  <Plus size={18} color="#3b82f6" />
+                  <span style={{ color: '#93c5fd', fontWeight: 800 }}>+ Registrar otra prenda para este mismo empeño</span>
+                </button>
               </div>
             </div>
 

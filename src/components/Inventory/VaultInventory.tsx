@@ -30,8 +30,16 @@ export const VaultInventory: React.FC<VaultInventoryProps> = ({ onSelectLoan }) 
       item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.serialNumber && item.serialNumber.toLowerCase().includes(searchTerm.toLowerCase())) ||
+      (item.code && item.code.toLowerCase().includes(searchTerm.toLowerCase())) ||
       item.storageLocation.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      l.customerName.toLowerCase().includes(searchTerm.toLowerCase());
+      l.customerName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.customerDni.includes(searchTerm) ||
+      l.code.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.receiptCode.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (l.items && l.items.some(it => 
+        it.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        (it.code && it.code.toLowerCase().includes(searchTerm.toLowerCase()))
+      ));
 
     if (!matchesSearch) return false;
     if (selectedCategory !== 'TODAS' && item.category !== selectedCategory) return false;
@@ -99,7 +107,7 @@ export const VaultInventory: React.FC<VaultInventoryProps> = ({ onSelectLoan }) 
             <input
               type="text"
               className="input-control"
-              placeholder="Buscar por artículo, nro de serie, garaje/ubicación o cliente..."
+              placeholder="Buscar por Código de Contrato (ej. A1), Prenda, Cliente, CI o Ubicación..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ paddingLeft: '40px' }}
@@ -246,8 +254,34 @@ export const VaultInventory: React.FC<VaultInventoryProps> = ({ onSelectLoan }) 
                         <span className="font-mono" style={{ color: '#FBBF24', fontWeight: 600 }}>{item.serialNumber}</span>
                       </div>
                     )}
-                    <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)' }}>
-                      Cliente: <strong style={{ color: '#FFFFFF' }}>{loan.customerName}</strong>
+                    
+                    {/* Ficha de Pertenencia del Cliente y Código de Contrato */}
+                    <div style={{
+                      marginTop: '6px',
+                      padding: '8px 10px',
+                      background: '#091020',
+                      border: '1.5px solid #2d4573',
+                      borderRadius: '8px'
+                    }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <span style={{ fontSize: '0.74rem', color: '#94a3b8', fontWeight: 700 }}>Pertenece al Cliente:</span>
+                        <span style={{ 
+                          fontSize: '0.78rem', 
+                          fontWeight: 800, 
+                          color: '#f59e0b', 
+                          backgroundColor: 'rgba(245, 158, 11, 0.15)',
+                          border: '1px solid #f59e0b',
+                          padding: '1px 6px',
+                          borderRadius: '4px',
+                          fontFamily: 'monospace' 
+                        }}>
+                          Contrato N° {loan.code}
+                        </span>
+                      </div>
+                      <strong style={{ color: '#ffffff', fontSize: '0.92rem', display: 'block', marginTop: '2px' }}>
+                        {loan.customerName}
+                      </strong>
+                      <span style={{ fontSize: '0.78rem', color: '#cbd5e1' }}>CI / DNI: {loan.customerDni}</span>
                     </div>
                   </div>
                 </div>

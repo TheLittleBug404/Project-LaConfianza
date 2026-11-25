@@ -22,6 +22,7 @@ interface NavbarProps {
   setActiveTab: (tab: ActiveTab) => void;
   onOpenNewLoan: () => void;
   onOpenNewCustomer: () => void;
+  onOpenPaymentModal: () => void;
   currentUser?: UserSession | null;
   onLogout?: () => void;
 }
@@ -30,6 +31,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   activeTab,
   setActiveTab,
   onOpenNewLoan,
+  onOpenPaymentModal,
   currentUser,
   onLogout,
 }) => {
@@ -111,6 +113,15 @@ export const Navbar: React.FC<NavbarProps> = ({
 
         {/* Actions & User Info */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            className="btn btn-emerald"
+            onClick={onOpenPaymentModal}
+            title="Registrar cobro de prórroga, cuota o liquidación de un cliente"
+          >
+            <Coins size={20} />
+            <span>Pagar Prórroga / Cuota</span>
+          </button>
+
           <button
             className="btn btn-yellow"
             onClick={onOpenNewLoan}

@@ -14,7 +14,8 @@ import {
   FileCheck,
   Database,
   Download,
-  RefreshCw
+  RefreshCw,
+  KeyRound
 } from 'lucide-react';
 import { usePawn } from '../context/PawnContext';
 import { StorageService } from '../services/storageService';
@@ -35,7 +36,7 @@ export const Dashboard: React.FC<DashboardProps> = ({
   onSelectLoan,
   onNavigateTab
 }) => {
-  const { stats, loans, monthlyBudget, setMonthlyBudget, resetToDefaultData, employees } = usePawn();
+  const { stats, loans, monthlyBudget, setMonthlyBudget, resetToDefaultData, employees, showDialog, openChangePasswordModal } = usePawn();
 
   const [isEditingBudget, setIsEditingBudget] = useState(false);
   const [newBudgetValue, setNewBudgetValue] = useState(monthlyBudget.toString());
@@ -50,17 +51,36 @@ export const Dashboard: React.FC<DashboardProps> = ({
       a.download = `respaldo_empenos_${new Date().toISOString().split('T')[0]}.json`;
       a.click();
       URL.revokeObjectURL(url);
-      alert('Copia de seguridad descargada exitosamente en formato JSON.');
+      showDialog({
+        type: 'success',
+        title: 'Copia de Seguridad',
+        message: 'Copia de seguridad descargada exitosamente en formato JSON.'
+      });
     } catch {
-      alert('Error al generar la copia de seguridad.');
+      showDialog({
+        type: 'danger',
+        title: 'Error de Respaldo',
+        message: 'Error al generar la copia de seguridad.'
+      });
     }
   };
 
   const handleResetDatabase = () => {
-    if (window.confirm('¿Está seguro de restablecer la base de datos local con los 4 clientes oficiales de ejemplo?\n\nEsta acción reiniciará los clientes y préstamos a sus valores predeterminados.')) {
-      resetToDefaultData();
-      alert('Base de datos restablecida correctamente con los 4 clientes de ejemplo.');
-    }
+    showDialog({
+      type: 'confirm',
+      title: 'Restablecer Base de Datos',
+      message: '¿Está seguro de restablecer la base de datos local con los 4 clientes oficiales de ejemplo?\n\nEsta acción reiniciará los clientes y préstamos a sus valores predeterminados.',
+      confirmText: 'Sí, Restablecer',
+      cancelText: 'Cancelar',
+      onConfirm: () => {
+        resetToDefaultData();
+        showDialog({
+          type: 'success',
+          title: 'Base de Datos Restablecida',
+          message: 'Base de datos restablecida correctamente con los clientes de ejemplo.'
+        });
+      }
+    });
   };
 
   const dueSoonLoans = loans.filter(l => l.status === 'POR_VENCER');
@@ -626,6 +646,17 @@ export const Dashboard: React.FC<DashboardProps> = ({
             </div>
 
             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <button 
+                type="button" 
+                className="btn btn-secondary"
+                onClick={openChangePasswordModal}
+                title="Cambiar la contraseña de inicio de sesión y seguridad del Administrador"
+                style={{ fontSize: '0.92rem' }}
+              >
+                <KeyRound size={18} />
+                <span>Cambiar Contraseña Admin</span>
+              </button>
+
               <button 
                 type="button" 
                 className="btn btn-secondary"

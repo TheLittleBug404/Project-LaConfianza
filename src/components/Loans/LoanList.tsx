@@ -17,11 +17,13 @@ import type { PawnLoan, LoanStatus } from '../../types';
 interface LoanListProps {
   onSelectLoan: (loan: PawnLoan) => void;
   onOpenNewLoan: () => void;
+  onOpenPaymentModal: (loan?: PawnLoan | null) => void;
 }
 
 export const LoanList: React.FC<LoanListProps> = ({
   onSelectLoan,
-  onOpenNewLoan
+  onOpenNewLoan,
+  onOpenPaymentModal
 }) => {
   const { loans } = usePawn();
   const [searchTerm, setSearchTerm] = useState('');
@@ -70,14 +72,25 @@ export const LoanList: React.FC<LoanListProps> = ({
           </p>
         </div>
 
-        <button 
-          className="btn btn-yellow" 
-          onClick={onOpenNewLoan}
-          style={{ fontSize: '1.1rem', padding: '12px 24px' }}
-        >
-          <Plus size={22} />
-          <span>+ NUEVO PRÉSTAMO</span>
-        </button>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <button 
+            className="btn btn-emerald" 
+            onClick={() => onOpenPaymentModal(null)}
+            style={{ fontSize: '1.05rem', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <Coins size={20} />
+            <span>PAGAR PRÓRROGA / CUOTA</span>
+          </button>
+
+          <button 
+            className="btn btn-yellow" 
+            onClick={onOpenNewLoan}
+            style={{ fontSize: '1.05rem', padding: '12px 20px', display: 'flex', alignItems: 'center', gap: '8px' }}
+          >
+            <Plus size={20} />
+            <span>+ NUEVO PRÉSTAMO</span>
+          </button>
+        </div>
       </div>
 
       {/* Filter and Search Bar */}
@@ -237,6 +250,18 @@ export const LoanList: React.FC<LoanListProps> = ({
                       Inicial: Bs. {loan.loanAmount.toLocaleString('es-PE')}
                     </span>
                   </div>
+
+                  {loan.status !== 'PAGADO' && loan.status !== 'REMATADO' && (
+                    <button 
+                      className="btn btn-emerald btn-sm" 
+                      onClick={(e) => { e.stopPropagation(); onOpenPaymentModal(loan); }}
+                      style={{ display: 'flex', alignItems: 'center', gap: '6px' }}
+                      title="Cobrar prórroga, cuota o liquidar este empeño"
+                    >
+                      <Coins size={15} />
+                      <span>Pagar / Prórroga</span>
+                    </button>
+                  )}
 
                   <button className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); onSelectLoan(loan); }}>
                     <Eye size={15} />

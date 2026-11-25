@@ -9,10 +9,15 @@ import type {
   CustomerTrafficColor,
   LoanStatus,
   CollateralCategory,
-  ItemCondition 
+  ItemCondition,
+  PledgeItem 
 } from '../types';
 import { StorageService } from '../services/storageService';
 import { generateReceiptCode } from '../utils/receiptCode';
+import { CustomDialogModal } from '../components/Common/CustomDialogModal';
+import type { DialogOptions } from '../components/Common/CustomDialogModal';
+import { AdminPasswordModal } from '../components/Common/AdminPasswordModal';
+import { ChangePasswordModal } from '../components/Common/ChangePasswordModal';
 
 interface PawnContextType {
   customers: Customer[];
@@ -23,6 +28,18 @@ interface PawnContextType {
   monthlyBudget: number;
   setMonthlyBudget: (amount: number) => void;
   nextReceiptCode: string;
+  isSaving: boolean;
+  savingMessage: string;
+  startSaving: (msg?: string) => void;
+  stopSaving: () => void;
+  showDialog: (options: {
+    title: string;
+    message: string;
+    type?: 'confirm' | 'success' | 'danger' | 'warning' | 'info';
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }) => void;
   
   // Acciones de Clientes
   addCustomer: (customerData: Omit<Customer, 'id' | 'registeredAt' | 'category' | 'creditScore' | 'totalLoansCount' | 'activeLoansCount' | 'totalPaidAmount' | 'totalBorrowedAmount' | 'defaultedLoansCount' | 'trafficColor'>) => Customer;
@@ -38,7 +55,7 @@ interface PawnContextType {
   // Acciones de Préstamos y Prendas
   createPawnLoan: (loanData: {
     customerId: string;
-    itemData: {
+    itemData?: {
       code?: string;
       category: CollateralCategory;
       name: string;
@@ -48,6 +65,16 @@ interface PawnContextType {
       appraisalValue: number;
       storageLocation: string;
     };
+    itemsData?: Array<{
+      code?: string;
+      category: CollateralCategory;
+      name: string;
+      description: string;
+      serialNumber?: string;
+      condition: ItemCondition;
+      appraisalValue: number;
+      storageLocation: string;
+    }>;
     loanAmount: number;
     monthlyInterestRate: number;
     adminExpensesRate?: number;
@@ -65,11 +92,111 @@ interface PawnContextType {
   
   // Utilidades
   resetToDefaultData: () => void;
+
+  // Seguridad y Autorización de Administrador
+  requestAdminAuth: (options: {
+    title?: string;
+    message?: string;
+    confirmLabel?: string;
+    onSuccess: () => void;
+  }) => void;
+  openChangePasswordModal: () => void;
+  changeAdminPassword: (newPass: string) => void;
+  verifyAdminPassword: (pass: string) => boolean;
 }
 
 const PawnContext = createContext<PawnContextType | undefined>(undefined);
 
 export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [isSaving, setIsSaving] = useState(false);
+  const [savingMessage, setSavingMessage] = useState('Guardando en Supabase...');
+
+  // Modal de diálogo y alertas personalizado
+  const [dialogState, setDialogState] = useState<DialogOptions>({
+    isOpen: false,
+    title: '',
+    message: '',
+    type: 'info'
+  });
+
+  // Seguridad y Contraseña de Administrador
+  const [adminPassword, setAdminPassword] = useState<string>(() => StorageService.getAdminPassword());
+  const [adminAuthOptions, setAdminAuthOptions] = useState<{
+    isOpen: boolean;
+    title?: string;
+    message?: string;
+    confirmLabel?: string;
+    onSuccess?: () => void;
+  }>({ isOpen: false });
+  const [isChangePassOpen, setIsChangePassOpen] = useState(false);
+
+  const verifyAdminPassword = (inputPass: string): boolean => {
+    return inputPass === StorageService.getAdminPassword();
+  };
+
+  const changeAdminPassword = (newPass: string) => {
+    StorageService.saveAdminPassword(newPass);
+    setAdminPassword(newPass);
+    showDialog({
+      title: '¡Contraseña Actualizada!',
+      message: 'La contraseña de Administrador ha sido cambiada con éxito. Recuerde usarla para iniciar sesión y autorizar eliminaciones.',
+      type: 'success'
+    });
+  };
+
+  const requestAdminAuth = (options: {
+    title?: string;
+    message?: string;
+    confirmLabel?: string;
+    onSuccess: () => void;
+  }) => {
+    setAdminAuthOptions({
+      isOpen: true,
+      title: options.title,
+      message: options.message,
+      confirmLabel: options.confirmLabel,
+      onSuccess: options.onSuccess
+    });
+  };
+
+  const openChangePasswordModal = () => {
+    setIsChangePassOpen(true);
+  };
+
+  const showDialog = (options: {
+    title: string;
+    message: string;
+    type?: 'confirm' | 'success' | 'danger' | 'warning' | 'info';
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }) => {
+    setDialogState({
+      isOpen: true,
+      title: options.title,
+      message: options.message,
+      type: options.type || 'info',
+      confirmText: options.confirmText || 'Aceptar',
+      cancelText: options.cancelText || 'Cancelar',
+      onConfirm: () => {
+        setDialogState(prev => ({ ...prev, isOpen: false }));
+        if (options.onConfirm) options.onConfirm();
+      },
+      onCancel: () => {
+        setDialogState(prev => ({ ...prev, isOpen: false }));
+      }
+    });
+  };
+
+  const startSaving = (msg = 'Guardando en Supabase...') => {
+    setSavingMessage(msg);
+    setIsSaving(true);
+  };
+
+  const stopSaving = () => {
+    setIsSaving(false);
+  };
+
   const [customers, setCustomers] = useState<Customer[]>(() => StorageService.getCustomers());
   const [employees, setEmployees] = useState<Employee[]>(() => StorageService.getEmployees());
   const [loans, setLoans] = useState<PawnLoan[]>(() => StorageService.getLoans());
@@ -81,12 +208,13 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
     const syncFromSupabase = async () => {
       try {
-        const [remoteCust, remoteEmp, remoteLoans, remotePay, remoteBudget] = await Promise.all([
+        const [remoteCust, remoteEmp, remoteLoans, remotePay, remoteBudget, remoteAdminPass] = await Promise.all([
           StorageService.fetchCustomersAsync(),
           StorageService.fetchEmployeesAsync(),
           StorageService.fetchLoansAsync(),
           StorageService.fetchPaymentsAsync(),
-          StorageService.fetchMonthlyBudgetAsync()
+          StorageService.fetchMonthlyBudgetAsync(),
+          StorageService.fetchAdminPasswordAsync()
         ]);
 
         if (isMounted) {
@@ -96,6 +224,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
           setLoans(remoteLoans);
           setPayments(remotePay);
           if (remoteBudget > 0) setMonthlyBudgetState(remoteBudget);
+          if (remoteAdminPass) setAdminPassword(remoteAdminPass);
         }
       } catch (err) {
         console.warn('Error sincronizando datos iniciales de Supabase:', err);
@@ -207,6 +336,7 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const getCustomerById = (id: string) => customers.find(c => c.id === id);
 
   const addCustomer = (customerData: Omit<Customer, 'id' | 'registeredAt' | 'category' | 'creditScore' | 'totalLoansCount' | 'activeLoansCount' | 'totalPaidAmount' | 'totalBorrowedAmount' | 'defaultedLoansCount' | 'trafficColor'>) => {
+    startSaving('Guardando nuevo cliente en Supabase...');
     const newCustomer: Customer = {
       ...customerData,
       id: `cust-${Date.now()}`,
@@ -223,11 +353,15 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
     const updated = [newCustomer, ...customers];
     setCustomers(updated);
+    StorageService.saveCustomers(updated).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
     return newCustomer;
   };
 
   const updateCustomer = (id: string, updates: Partial<Customer>) => {
-    setCustomers(prev => prev.map(c => {
+    startSaving('Actualizando cliente en Supabase...');
+    const updated = customers.map(c => {
       if (c.id === id) {
         const merged = { ...c, ...updates };
         const { category, creditScore, trafficColor } = computeCustomerCategory(merged);
@@ -239,7 +373,11 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
       return c;
-    }));
+    });
+    setCustomers(updated);
+    StorageService.saveCustomers(updated).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const deleteCustomer = (id: string): { success: boolean; message?: string } => {
@@ -256,32 +394,51 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
     }
 
+    startSaving('Eliminando cliente en Supabase...');
     setCustomers(prev => prev.filter(c => c.id !== id));
+    StorageService.deleteCustomer(id).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
     return { success: true };
   };
 
   // Acciones de Gestión de Empleados
   const addEmployee = (employeeData: Omit<Employee, 'id' | 'createdAt'>) => {
+    startSaving('Guardando nuevo empleado en Supabase...');
     const newEmployee: Employee = {
       ...employeeData,
       id: `emp-${Date.now()}`,
       createdAt: new Date().toISOString(),
     };
-    setEmployees(prev => [newEmployee, ...prev]);
+    const updated = [newEmployee, ...employees];
+    setEmployees(updated);
+    StorageService.saveEmployees(updated).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
     return newEmployee;
   };
 
   const updateEmployee = (id: string, updates: Partial<Employee>) => {
-    setEmployees(prev => prev.map(e => e.id === id ? { ...e, ...updates } : e));
+    startSaving('Actualizando empleado en Supabase...');
+    const updated = employees.map(e => e.id === id ? { ...e, ...updates } : e);
+    setEmployees(updated);
+    StorageService.saveEmployees(updated).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const deleteEmployee = (id: string) => {
+    startSaving('Eliminando empleado en Supabase...');
     setEmployees(prev => prev.filter(e => e.id !== id));
+    StorageService.deleteEmployee(id).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const createPawnLoan = (loanData: {
     customerId: string;
-    itemData: {
+    itemData?: {
+      code?: string;
       category: CollateralCategory;
       name: string;
       description: string;
@@ -290,6 +447,16 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       appraisalValue: number;
       storageLocation: string;
     };
+    itemsData?: Array<{
+      code?: string;
+      category: CollateralCategory;
+      name: string;
+      description: string;
+      serialNumber?: string;
+      condition: ItemCondition;
+      appraisalValue: number;
+      storageLocation: string;
+    }>;
     loanAmount: number;
     monthlyInterestRate: number;
     adminExpensesRate?: number;
@@ -313,6 +480,40 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     const adminRate = loanData.adminExpensesRate ?? 12;
     const adminAmount = (loanData.loanAmount * adminRate) / 100;
 
+    // Procesar lista de prendas (soporta 1, 2, 3 o más prendas por empeño)
+    const rawItems = (loanData.itemsData && loanData.itemsData.length > 0)
+      ? loanData.itemsData
+      : (loanData.itemData ? [loanData.itemData] : []);
+
+    const pledgeItems: PledgeItem[] = rawItems.map((it, idx) => ({
+      id: `item-${Date.now()}-${idx}`,
+      code: it.code || `PRD-${Date.now().toString().slice(-6)}-${idx + 1}`,
+      category: it.category,
+      name: it.name,
+      description: it.description,
+      serialNumber: it.serialNumber,
+      condition: it.condition,
+      appraisalValue: it.appraisalValue,
+      storageLocation: it.storageLocation || 'Bóveda Principal',
+      status: 'EN_CUSTODIA'
+    }));
+
+    const totalAppraisal = pledgeItems.reduce((sum, it) => sum + it.appraisalValue, 0);
+    const mainItemName = pledgeItems.length > 1
+      ? `${pledgeItems.map(p => p.name).join(' + ')} (${pledgeItems.length} prendas)`
+      : (pledgeItems[0]?.name || 'Prenda en Garantía');
+
+    const primaryItem: PledgeItem = pledgeItems[0] || {
+      id: `item-${Date.now()}`,
+      category: 'OTROS',
+      name: 'Prenda en Garantía',
+      description: '',
+      condition: 'BUENO',
+      appraisalValue: loanData.loanAmount,
+      storageLocation: 'Bóveda Principal',
+      status: 'EN_CUSTODIA'
+    };
+
     const newLoan: PawnLoan = {
       id: `loan-${Date.now()}`,
       code,
@@ -323,10 +524,11 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       customerAddress: customer.address,
       customerPhone: customer.phone,
       item: {
-        id: `item-${Date.now()}`,
-        ...loanData.itemData,
-        status: 'EN_CUSTODIA'
+        ...primaryItem,
+        name: mainItemName,
+        appraisalValue: totalAppraisal || primaryItem.appraisalValue
       },
+      items: pledgeItems,
       loanAmount: loanData.loanAmount,
       remainingCapital: loanData.loanAmount,
       monthlyInterestRate: loanData.monthlyInterestRate ?? 3,
@@ -372,11 +574,22 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       date: new Date().toISOString(),
       paymentMethod: 'EFECTIVO',
       receiptCode,
-      notes: `Desembolso inicial por empeño de ${loanData.itemData.name}`
+      notes: `Desembolso inicial por empeño de ${newLoan.item.name}`
     };
 
-    setLoans(prev => [newLoan, ...prev]);
-    setPayments(prev => [initialDisbursement, ...prev]);
+    startSaving('Registrando préstamo y prenda en Supabase...');
+    const updatedLoans = [newLoan, ...loans];
+    const updatedPayments = [initialDisbursement, ...payments];
+
+    setLoans(updatedLoans);
+    setPayments(updatedPayments);
+
+    Promise.all([
+      StorageService.saveLoans(updatedLoans),
+      StorageService.savePayments(updatedPayments)
+    ]).finally(() => {
+      setTimeout(stopSaving, 700);
+    });
 
     return newLoan;
   };
@@ -410,33 +623,45 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     // Actualizar préstamo
-    setLoans(prev => prev.map(l => {
+    const updatedLoans = loans.map(l => {
       if (l.id === loanId) {
         return {
           ...l,
           dueDate: newDueDate.toISOString(),
-          status: 'VIGENTE',
+          status: 'VIGENTE' as LoanStatus,
           totalInterestPaid: l.totalInterestPaid + interestAmount,
           lastPaymentDate: new Date().toISOString(),
         };
       }
       return l;
-    }));
+    });
+    setLoans(updatedLoans);
 
     // Actualizar cliente
-    setCustomers(prev => prev.map(c => {
+    const updatedCustomers = customers.map(c => {
       if (c.id === loan.customerId) {
         const updated = {
           ...c,
           totalPaidAmount: c.totalPaidAmount + interestAmount
         };
-        const { category, creditScore } = computeCustomerCategory(updated);
-        return { ...updated, category, creditScore };
+        const { category, creditScore, trafficColor } = computeCustomerCategory(updated, updatedLoans);
+        return { ...updated, category, creditScore, trafficColor };
       }
       return c;
-    }));
+    });
+    setCustomers(updatedCustomers);
 
-    setPayments(prev => [transaction, ...prev]);
+    startSaving('Registrando pago de prórroga en Supabase...');
+    const updatedPayments = [transaction, ...payments];
+    setPayments(updatedPayments);
+
+    Promise.all([
+      StorageService.savePayments(updatedPayments),
+      StorageService.saveLoans(updatedLoans),
+      StorageService.saveCustomers(updatedCustomers)
+    ]).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const payCapitalAmortization = (loanId: string, amount: number, paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'QR', notes?: string) => {
@@ -463,38 +688,52 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       notes: notes || (isFullyPaid ? 'Cancelación y liquidación total' : `Abono a capital (${effectiveAmount})`)
     };
 
-    setLoans(prev => prev.map(l => {
+    const updatedLoans = loans.map(l => {
       if (l.id === loanId) {
+        const updatedItems = l.items ? l.items.map(it => ({ ...it, status: (isFullyPaid ? 'DEVUELTA' : it.status) as any })) : undefined;
         return {
           ...l,
           remainingCapital: newRemainingCapital,
           totalCapitalPaid: l.totalCapitalPaid + effectiveAmount,
-          status: isFullyPaid ? 'PAGADO' : l.status,
+          status: (isFullyPaid ? 'PAGADO' : l.status) as LoanStatus,
           closedAt: isFullyPaid ? new Date().toISOString() : undefined,
           lastPaymentDate: new Date().toISOString(),
           item: {
             ...l.item,
-            status: isFullyPaid ? 'DEVUELTA' : l.item.status
-          }
+            status: (isFullyPaid ? 'DEVUELTA' : l.item.status) as any
+          },
+          items: updatedItems
         };
       }
       return l;
-    }));
+    });
+    setLoans(updatedLoans);
 
-    setCustomers(prev => prev.map(c => {
+    const updatedCustomers = customers.map(c => {
       if (c.id === loan.customerId) {
         const updated = {
           ...c,
           totalPaidAmount: c.totalPaidAmount + effectiveAmount,
           activeLoansCount: isFullyPaid ? Math.max(0, c.activeLoansCount - 1) : c.activeLoansCount
         };
-        const { category, creditScore } = computeCustomerCategory(updated);
-        return { ...updated, category, creditScore };
+        const { category, creditScore, trafficColor } = computeCustomerCategory(updated, updatedLoans);
+        return { ...updated, category, creditScore, trafficColor };
       }
       return c;
-    }));
+    });
+    setCustomers(updatedCustomers);
 
-    setPayments(prev => [transaction, ...prev]);
+    startSaving('Registrando cuota / abono en Supabase...');
+    const updatedPayments = [transaction, ...payments];
+    setPayments(updatedPayments);
+
+    Promise.all([
+      StorageService.savePayments(updatedPayments),
+      StorageService.saveLoans(updatedLoans),
+      StorageService.saveCustomers(updatedCustomers)
+    ]).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const payFullLiquidation = (loanId: string, paymentMethod: 'EFECTIVO' | 'TRANSFERENCIA' | 'QR', notes?: string) => {
@@ -520,73 +759,99 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
       notes: notes || 'Liquidación total del préstamo con retiro de prenda',
     };
 
-    setLoans(prev => prev.map(l => {
+    const updatedLoans = loans.map(l => {
       if (l.id === loanId) {
+        const updatedItems = l.items ? l.items.map(it => ({ ...it, status: 'DEVUELTA' as any })) : undefined;
         return {
           ...l,
           remainingCapital: 0,
           totalCapitalPaid: l.totalCapitalPaid + loan.remainingCapital,
           totalInterestPaid: l.totalInterestPaid + currentInterest,
-          status: 'PAGADO',
+          status: 'PAGADO' as LoanStatus,
           closedAt: new Date().toISOString(),
           lastPaymentDate: new Date().toISOString(),
           item: {
             ...l.item,
-            status: 'DEVUELTA'
-          }
+            status: 'DEVUELTA' as any
+          },
+          items: updatedItems
         };
       }
       return l;
-    }));
+    });
+    setLoans(updatedLoans);
 
-    setCustomers(prev => prev.map(c => {
+    const updatedCustomers = customers.map(c => {
       if (c.id === loan.customerId) {
         const updated = {
           ...c,
           totalPaidAmount: c.totalPaidAmount + totalToPay,
           activeLoansCount: Math.max(0, c.activeLoansCount - 1)
         };
-        const { category, creditScore } = computeCustomerCategory(updated);
-        return { ...updated, category, creditScore };
+        const { category, creditScore, trafficColor } = computeCustomerCategory(updated, updatedLoans);
+        return { ...updated, category, creditScore, trafficColor };
       }
       return c;
-    }));
+    });
+    setCustomers(updatedCustomers);
 
-    setPayments(prev => [transaction, ...prev]);
+    startSaving('Registrando liquidación total en Supabase...');
+    const updatedPayments = [transaction, ...payments];
+    setPayments(updatedPayments);
+
+    Promise.all([
+      StorageService.savePayments(updatedPayments),
+      StorageService.saveLoans(updatedLoans),
+      StorageService.saveCustomers(updatedCustomers)
+    ]).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const sendToAuction = (loanId: string, notes?: string) => {
     const loan = loans.find(l => l.id === loanId);
     if (!loan) return;
 
-    setLoans(prev => prev.map(l => {
+    startSaving('Actualizando pase a remate en Supabase...');
+    const updatedLoans = loans.map(l => {
       if (l.id === loanId) {
+        const updatedItems = l.items ? l.items.map(it => ({ ...it, status: 'EN_REMATE' as any })) : undefined;
         return {
           ...l,
-          status: 'REMATADO',
+          status: 'REMATADO' as LoanStatus,
           notes: notes ? `${l.notes || ''} | Rematado: ${notes}` : l.notes,
           item: {
             ...l.item,
-            status: 'EN_REMATE'
-          }
+            status: 'EN_REMATE' as any
+          },
+          items: updatedItems
         };
       }
       return l;
-    }));
+    });
+    setLoans(updatedLoans);
 
-    setCustomers(prev => prev.map(c => {
+    const updatedCustomers = customers.map(c => {
       if (c.id === loan.customerId) {
-        const updated = {
+        return {
           ...c,
           defaultedLoansCount: c.defaultedLoansCount + 1,
           activeLoansCount: Math.max(0, c.activeLoansCount - 1),
+          trafficColor: 'ROJO' as CustomerTrafficColor,
           category: 'MOROSO' as CustomerCategory,
           creditScore: Math.max(10, c.creditScore - 35)
         };
-        return updated;
       }
       return c;
-    }));
+    });
+    setCustomers(updatedCustomers);
+
+    Promise.all([
+      StorageService.saveLoans(updatedLoans),
+      StorageService.saveCustomers(updatedCustomers)
+    ]).finally(() => {
+      setTimeout(stopSaving, 600);
+    });
   };
 
   const resetToDefaultData = () => {
@@ -651,6 +916,11 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
         monthlyBudget,
         setMonthlyBudget,
         nextReceiptCode,
+        isSaving,
+        savingMessage,
+        startSaving,
+        stopSaving,
+        showDialog,
         addCustomer,
         updateCustomer,
         deleteCustomer,
@@ -664,9 +934,42 @@ export const PawnProvider: React.FC<{ children: React.ReactNode }> = ({ children
         payFullLiquidation,
         sendToAuction,
         resetToDefaultData,
+        requestAdminAuth,
+        openChangePasswordModal,
+        changeAdminPassword,
+        verifyAdminPassword,
       }}
     >
       {children}
+      <CustomDialogModal
+        isOpen={dialogState.isOpen}
+        type={dialogState.type}
+        title={dialogState.title}
+        message={dialogState.message}
+        confirmText={dialogState.confirmText}
+        cancelText={dialogState.cancelText}
+        onConfirm={dialogState.onConfirm}
+        onCancel={dialogState.onCancel}
+      />
+      <AdminPasswordModal
+        isOpen={adminAuthOptions.isOpen}
+        title={adminAuthOptions.title}
+        message={adminAuthOptions.message}
+        confirmLabel={adminAuthOptions.confirmLabel}
+        verifyPassword={verifyAdminPassword}
+        onConfirm={() => {
+          const action = adminAuthOptions.onSuccess;
+          setAdminAuthOptions(prev => ({ ...prev, isOpen: false }));
+          if (action) action();
+        }}
+        onClose={() => setAdminAuthOptions(prev => ({ ...prev, isOpen: false }))}
+      />
+      <ChangePasswordModal
+        isOpen={isChangePassOpen}
+        currentPasswordActual={adminPassword}
+        onChangeSuccess={changeAdminPassword}
+        onClose={() => setIsChangePassOpen(false)}
+      />
     </PawnContext.Provider>
   );
 };

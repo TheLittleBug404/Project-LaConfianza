@@ -6,8 +6,7 @@ import {
   CheckCircle2, 
   Coins, 
   ShieldAlert, 
-  Printer,
-  Briefcase
+  Printer
 } from 'lucide-react';
 import { usePawn } from '../../context/PawnContext';
 import type { PawnLoan, UserRole } from '../../types';
@@ -32,7 +31,8 @@ export const LoanDetailModal: React.FC<LoanDetailModalProps> = ({
     payCapitalAmortization, 
     payFullLiquidation, 
     sendToAuction,
-    payments
+    payments,
+    showDialog
   } = usePawn();
 
   const [activeAction, setActiveAction] = useState<'NONE' | 'REFRENDO' | 'AMORTIZACION' | 'LIQUIDACION' | 'REMATE'>('NONE');
@@ -53,30 +53,60 @@ export const LoanDetailModal: React.FC<LoanDetailModalProps> = ({
   const handleRefrendo = () => {
     payInterestRefinance(loan.id, paymentMethod, actionNotes || 'Refrendo de 30 días adicionales');
     setActiveAction('NONE');
-    alert('¡Refrendo procesado! Se extendió la fecha de vencimiento por 30 días.');
+    showDialog({
+      title: '¡Refrendo Procesado!',
+      message: 'Se extendió la fecha de vencimiento por 30 días adicionales.',
+      type: 'success'
+    });
   };
 
   const handleAmortize = () => {
     if (amortizeAmount <= 0) return;
     payCapitalAmortization(loan.id, amortizeAmount, paymentMethod, actionNotes);
     setActiveAction('NONE');
-    alert(`¡Abono de S/ ${amortizeAmount} registrado con éxito!`);
+    showDialog({
+      title: '¡Abono Registrado!',
+      message: `¡Abono de Bs. ${amortizeAmount} registrado con éxito!`,
+      type: 'success'
+    });
   };
 
   const handleFullLiquidation = () => {
-    if (window.confirm(`¿Confirmar cancelación total de S/ ${totalToLiquidate}? La prenda será marcada como DEVUELTA.`)) {
-      payFullLiquidation(loan.id, paymentMethod, actionNotes);
-      setActiveAction('NONE');
-      alert('¡Préstamo liquidado en su totalidad! Prenda devuelta al titular.');
-    }
+    showDialog({
+      title: 'Confirmar Liquidación Total',
+      message: `¿Confirmar cancelación total de Bs. ${totalToLiquidate.toFixed(2)}? La prenda será marcada como DEVUELTA.`,
+      type: 'confirm',
+      confirmText: 'Sí, Liquidar',
+      cancelText: 'Cancelar',
+      onConfirm: () => {
+        payFullLiquidation(loan.id, paymentMethod, actionNotes);
+        setActiveAction('NONE');
+        showDialog({
+          title: '¡Préstamo Liquidado!',
+          message: '¡Préstamo liquidado en su totalidad! Prenda devuelta al titular.',
+          type: 'success'
+        });
+      }
+    });
   };
 
   const handleAuction = () => {
-    if (window.confirm('¿Confirmar pase de la prenda a REMATE por incumplimiento de pago? El cliente pasará a estado MOROSO.')) {
-      sendToAuction(loan.id, actionNotes || 'Pase a remate tras vencimiento de plazo');
-      setActiveAction('NONE');
-      alert('Prenda transferida al catálogo de remate.');
-    }
+    showDialog({
+      title: 'Confirmar Pase a Remate',
+      message: '¿Confirmar pase de la prenda a REMATE por incumplimiento de pago? El cliente pasará a estado MOROSO.',
+      type: 'danger',
+      confirmText: 'Sí, Pasar a Remate',
+      cancelText: 'Cancelar',
+      onConfirm: () => {
+        sendToAuction(loan.id, actionNotes || 'Pase a remate tras vencimiento de plazo');
+        setActiveAction('NONE');
+        showDialog({
+          title: 'Prenda en Remate',
+          message: 'Prenda transferida exitosamente al catálogo de remate.',
+          type: 'warning'
+        });
+      }
+    });
   };
 
   return (
@@ -138,38 +168,66 @@ export const LoanDetailModal: React.FC<LoanDetailModalProps> = ({
             
             {/* Prenda Card */}
             <div className="card" style={{ padding: '16px', background: 'var(--bg-surface)' }}>
-              <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700, display: 'block', marginBottom: '8px' }}>
-                Prenda en Garantía
-              </span>
-              <h4 style={{ fontSize: '1.05rem', color: '#F59E0B', fontWeight: 700, marginBottom: '6px' }}>
-                {loan.item.name}
-              </h4>
-              <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
-                {loan.item.description || 'Sin descripción adicional.'}
-              </p>
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.82rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Categoría:</span>
-                  <span style={{ color: '#FFFFFF' }}>{loan.item.category.replace('_', ' ')}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Estado Físico:</span>
-                  <span style={{ color: '#FFFFFF' }}>{loan.item.condition}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Tasación / Avalúo:</span>
-                  <strong style={{ color: '#10B981' }}>S/ {loan.item.appraisalValue.toLocaleString('es-PE')}</strong>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Ubicación en Bóveda:</span>
-                  <span style={{ color: '#FBBF24' }}>{loan.item.storageLocation}</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-                  <span style={{ color: 'var(--text-muted)' }}>Estado Custodia:</span>
-                  <span style={{ color: '#FFFFFF', fontWeight: 700 }}>{loan.item.status}</span>
-                </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <span style={{ fontSize: '0.78rem', color: 'var(--text-muted)', textTransform: 'uppercase', fontWeight: 700 }}>
+                  Prendas en Garantía ({loan.items?.length || 1})
+                </span>
+                <span style={{ fontSize: '0.82rem', color: '#34d399', fontWeight: 700 }}>
+                  Avalúo Total: Bs. {loan.item.appraisalValue.toLocaleString('es-PE')}
+                </span>
               </div>
+
+              {loan.items && loan.items.length > 1 ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', maxHeight: '220px', overflowY: 'auto' }}>
+                  {loan.items.map((it, idx) => (
+                    <div key={it.id || idx} style={{ background: '#091020', padding: '10px 12px', borderRadius: '8px', border: '1px solid #2d4573' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <strong style={{ color: '#F59E0B', fontSize: '0.92rem' }}>
+                          #{idx + 1} {it.name}
+                        </strong>
+                        <strong style={{ color: '#10B981', fontSize: '0.88rem' }}>
+                          Bs. {it.appraisalValue.toLocaleString('es-PE')}
+                        </strong>
+                      </div>
+                      <div style={{ fontSize: '0.8rem', color: '#94a3b8', marginTop: '3px' }}>
+                        {it.description ? `${it.description} | ` : ''}{it.condition} | {it.storageLocation}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <>
+                  <h4 style={{ fontSize: '1.05rem', color: '#F59E0B', fontWeight: 700, marginBottom: '6px' }}>
+                    {loan.item.name}
+                  </h4>
+                  <p style={{ fontSize: '0.84rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
+                    {loan.item.description || 'Sin descripción adicional.'}
+                  </p>
+
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', fontSize: '0.82rem' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Categoría:</span>
+                      <span style={{ color: '#FFFFFF' }}>{loan.item.category.replace('_', ' ')}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Estado Físico:</span>
+                      <span style={{ color: '#FFFFFF' }}>{loan.item.condition}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Tasación / Avalúo:</span>
+                      <strong style={{ color: '#10B981' }}>Bs. {loan.item.appraisalValue.toLocaleString('es-PE')}</strong>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Ubicación en Bóveda:</span>
+                      <span style={{ color: '#FBBF24' }}>{loan.item.storageLocation}</span>
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                      <span style={{ color: 'var(--text-muted)' }}>Estado Custodia:</span>
+                      <span style={{ color: '#FFFFFF', fontWeight: 700 }}>{loan.item.status}</span>
+                    </div>
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Financial Status Card */}
@@ -221,153 +279,131 @@ export const LoanDetailModal: React.FC<LoanDetailModalProps> = ({
 
           </div>
 
-          {/* Action Operations Bar (if loan is active) */}
+          {/* Action Operations Bar (if loan is active) - Habilitado para ADMIN y EMPLEADO */}
           {loan.status !== 'PAGADO' && loan.status !== 'REMATADO' && (
-            userRole === 'ADMIN' ? (
-              <div className="card" style={{ padding: '16px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
-                <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
-                  Operaciones de Caja Disponibles
-                </span>
+            <div className="card" style={{ padding: '16px', border: '1px solid rgba(245, 158, 11, 0.3)' }}>
+              <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary)', textTransform: 'uppercase', display: 'block', marginBottom: '12px' }}>
+                Operaciones de Caja Disponibles
+              </span>
 
-                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button 
+                  className={`btn ${activeAction === 'REFRENDO' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  onClick={() => setActiveAction(activeAction === 'REFRENDO' ? 'NONE' : 'REFRENDO')}
+                >
+                  <RefreshCw size={15} />
+                  <span>Pagar Prórroga / Refrendo (Bs. {monthlyInterest.toFixed(2)})</span>
+                </button>
+
+                <button 
+                  className={`btn ${activeAction === 'AMORTIZACION' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
+                  onClick={() => setActiveAction(activeAction === 'AMORTIZACION' ? 'NONE' : 'AMORTIZACION')}
+                >
+                  <Coins size={15} />
+                  <span>Pagar Cuota / Abono</span>
+                </button>
+
+                <button 
+                  className={`btn ${activeAction === 'LIQUIDACION' ? 'btn-emerald' : 'btn-secondary'} btn-sm`}
+                  onClick={() => setActiveAction(activeAction === 'LIQUIDACION' ? 'NONE' : 'LIQUIDACION')}
+                >
+                  <CheckCircle2 size={15} />
+                  <span>Liquidación Total (Bs. {totalToLiquidate.toFixed(2)})</span>
+                </button>
+
+                {loan.status === 'EN_MORA' && userRole === 'ADMIN' && (
                   <button 
-                    className={`btn ${activeAction === 'REFRENDO' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
-                    onClick={() => setActiveAction(activeAction === 'REFRENDO' ? 'NONE' : 'REFRENDO')}
+                    className={`btn ${activeAction === 'REMATE' ? 'btn-danger' : 'btn-secondary'} btn-sm`}
+                    onClick={() => setActiveAction(activeAction === 'REMATE' ? 'NONE' : 'REMATE')}
                   >
-                    <RefreshCw size={15} />
-                    <span>Pagar Refrendo (S/ {monthlyInterest.toFixed(2)})</span>
+                    <ShieldAlert size={15} />
+                    <span>Pasar Prenda a Remate</span>
                   </button>
-
-                  <button 
-                    className={`btn ${activeAction === 'AMORTIZACION' ? 'btn-primary' : 'btn-secondary'} btn-sm`}
-                    onClick={() => setActiveAction(activeAction === 'AMORTIZACION' ? 'NONE' : 'AMORTIZACION')}
-                  >
-                    <Coins size={15} />
-                    <span>Abono a Capital</span>
-                  </button>
-
-                  <button 
-                    className={`btn ${activeAction === 'LIQUIDACION' ? 'btn-emerald' : 'btn-secondary'} btn-sm`}
-                    onClick={() => setActiveAction(activeAction === 'LIQUIDACION' ? 'NONE' : 'LIQUIDACION')}
-                  >
-                    <CheckCircle2 size={15} />
-                    <span>Liquidación Total (S/ {totalToLiquidate.toFixed(2)})</span>
-                  </button>
-
-                  {loan.status === 'EN_MORA' && (
-                    <button 
-                      className={`btn ${activeAction === 'REMATE' ? 'btn-danger' : 'btn-secondary'} btn-sm`}
-                      onClick={() => setActiveAction(activeAction === 'REMATE' ? 'NONE' : 'REMATE')}
-                    >
-                      <ShieldAlert size={15} />
-                      <span>Pasar Prenda a Remate</span>
-                    </button>
-                  )}
-                </div>
-
-                {/* Sub-form according to active action */}
-                {activeAction !== 'NONE' && (
-                  <div 
-                    style={{ 
-                      marginTop: '16px', 
-                      padding: '16px', 
-                      background: 'var(--bg-main)', 
-                      borderRadius: 'var(--radius-md)',
-                      border: '1px solid var(--border-subtle)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '12px'
-                    }}
-                  >
-                    <div className="grid-2">
-                      <div className="input-group">
-                        <label className="input-label">Medio de Pago</label>
-                        <select 
-                          className="input-control"
-                          value={paymentMethod}
-                          onChange={(e) => setPaymentMethod(e.target.value as 'EFECTIVO' | 'TRANSFERENCIA' | 'QR')}
-                        >
-                          <option value="EFECTIVO">Efectivo en Caja</option>
-                          <option value="TRANSFERENCIA">Transferencia Bancaria / BCP / BBVA</option>
-                          <option value="QR">Yape / Plin / QR</option>
-                        </select>
-                      </div>
-
-                      {activeAction === 'AMORTIZACION' && (
-                        <div className="input-group">
-                          <label className="input-label">Monto de Abono a Capital (S/)</label>
-                          <input 
-                            type="number"
-                            min="1"
-                            max={loan.remainingCapital}
-                            className="input-control font-mono"
-                            value={amortizeAmount}
-                            onChange={(e) => setAmortizeAmount(Number(e.target.value))}
-                          />
-                        </div>
-                      )}
-                    </div>
-
-                    <div className="input-group">
-                      <label className="input-label">Nota o Concepto de Operación</label>
-                      <input 
-                        type="text"
-                        className="input-control"
-                        placeholder="Ej. Recibo de pago entregado al cliente"
-                        value={actionNotes}
-                        onChange={(e) => setActionNotes(e.target.value)}
-                      />
-                    </div>
-
-                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-                      <button className="btn btn-secondary btn-sm" onClick={() => setActiveAction('NONE')}>
-                        Cancelar
-                      </button>
-                      {activeAction === 'REFRENDO' && (
-                        <button className="btn btn-primary btn-sm" onClick={handleRefrendo}>
-                          Confirmar Refrendo y Extender 30 días
-                        </button>
-                      )}
-                      {activeAction === 'AMORTIZACION' && (
-                        <button className="btn btn-primary btn-sm" onClick={handleAmortize}>
-                          Registrar Abono a Capital
-                        </button>
-                      )}
-                      {activeAction === 'LIQUIDACION' && (
-                        <button className="btn btn-emerald btn-sm" onClick={handleFullLiquidation}>
-                          Confirmar Cancelación y Entregar Prenda
-                        </button>
-                      )}
-                      {activeAction === 'REMATE' && (
-                        <button className="btn btn-danger btn-sm" onClick={handleAuction}>
-                          Ejecutar Pase a Remate
-                        </button>
-                      )}
-                    </div>
-                  </div>
                 )}
               </div>
-            ) : (
-              <div 
-                style={{
-                  padding: '14px 18px',
-                  borderRadius: 'var(--radius-md)',
-                  background: 'rgba(59, 130, 246, 0.08)',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '12px'
-                }}
-              >
-                <Briefcase size={20} color="#FBBF24" style={{ flexShrink: 0 }} />
-                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                  <strong style={{ color: '#FBBF24', display: 'block', marginBottom: '2px' }}>
-                    Rol Empleado (Solo Otorgar Préstamos)
-                  </strong>
-                  Tu rol solo tiene autorización para otorgar préstamos y consultar contratos emitidos. Las operaciones de cobro y caja (refrendos, amortizaciones, liquidaciones y remates) están reservadas para el Administrador.
+
+              {/* Sub-form according to active action */}
+              {activeAction !== 'NONE' && (
+                <div 
+                  style={{ 
+                    marginTop: '16px', 
+                    padding: '16px', 
+                    background: 'var(--bg-main)', 
+                    borderRadius: 'var(--radius-md)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                  }}
+                >
+                  <div className="grid-2">
+                    <div className="input-group">
+                      <label className="input-label">Medio de Pago</label>
+                      <select 
+                        className="input-control"
+                        value={paymentMethod}
+                        onChange={(e) => setPaymentMethod(e.target.value as 'EFECTIVO' | 'TRANSFERENCIA' | 'QR')}
+                      >
+                        <option value="EFECTIVO">Efectivo en Caja</option>
+                        <option value="TRANSFERENCIA">Transferencia Bancaria</option>
+                        <option value="QR">Yape / Plin / QR</option>
+                      </select>
+                    </div>
+
+                    {activeAction === 'AMORTIZACION' && (
+                      <div className="input-group">
+                        <label className="input-label">Monto de Cuota / Abono a Capital (Bs.)</label>
+                        <input 
+                          type="number"
+                          min="1"
+                          max={loan.remainingCapital}
+                          className="input-control font-mono"
+                          value={amortizeAmount}
+                          onChange={(e) => setAmortizeAmount(Number(e.target.value))}
+                        />
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="input-group">
+                    <label className="input-label">Nota o Concepto de Operación</label>
+                    <input 
+                      type="text"
+                      className="input-control"
+                      placeholder="Ej. Recibo de pago entregado al cliente"
+                      value={actionNotes}
+                      onChange={(e) => setActionNotes(e.target.value)}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+                    <button className="btn btn-secondary btn-sm" onClick={() => setActiveAction('NONE')}>
+                      Cancelar
+                    </button>
+                    {activeAction === 'REFRENDO' && (
+                      <button className="btn btn-primary btn-sm" onClick={handleRefrendo}>
+                        Confirmar Prórroga (30 días)
+                      </button>
+                    )}
+                    {activeAction === 'AMORTIZACION' && (
+                      <button className="btn btn-primary btn-sm" onClick={handleAmortize}>
+                        Registrar Cuota / Abono
+                      </button>
+                    )}
+                    {activeAction === 'LIQUIDACION' && (
+                      <button className="btn btn-emerald btn-sm" onClick={handleFullLiquidation}>
+                        Confirmar Cancelación y Entregar Prenda
+                      </button>
+                    )}
+                    {activeAction === 'REMATE' && (
+                      <button className="btn btn-danger btn-sm" onClick={handleAuction}>
+                        Ejecutar Pase a Remate
+                      </button>
+                    )}
+                  </div>
                 </div>
-              </div>
-            )
+              )}
+            </div>
           )}
 
           {/* Payment History */}

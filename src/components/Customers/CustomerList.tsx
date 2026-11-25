@@ -30,16 +30,21 @@ export const CustomerList: React.FC<CustomerListProps> = ({
   onCreateLoanForCustomer,
   userRole = 'ADMIN'
 }) => {
-  const { customers, loans, deleteCustomer } = usePawn();
+  const { customers, loans, deleteCustomer, showDialog, requestAdminAuth } = usePawn();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedColor, setSelectedColor] = useState<string>('TODOS');
   const isAdmin = userRole === 'ADMIN';
 
   const filteredCustomers = customers.filter(c => {
+    const custLoans = loans.filter(l => l.customerId === c.id);
     const matchesSearch = 
       c.fullName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       c.dni.includes(searchTerm) ||
-      c.phone.includes(searchTerm);
+      c.phone.includes(searchTerm) ||
+      custLoans.some(l => 
+        l.code.toLowerCase().includes(searchTerm.toLowerCase()) || 
+        l.receiptCode.toLowerCase().includes(searchTerm.toLowerCase())
+      );
       
     if (!matchesSearch) return false;
 
@@ -107,7 +112,7 @@ export const CustomerList: React.FC<CustomerListProps> = ({
             <input
               type="text"
               className="input-control"
-              placeholder="Buscar por Carnet (CI / DNI), Nombres o Celular..."
+              placeholder="Buscar por Nombre, CI, Teléfono o Código de Contrato (ej. A1)..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               style={{ paddingLeft: '44px', fontSize: '1.05rem' }}
@@ -193,6 +198,30 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                       <Calendar size={14} />
                       <span>Registrado: {new Date(customer.registeredAt).toLocaleDateString('es-PE')}</span>
                     </div>
+
+                    {/* Contratos asociados al cliente */}
+                    {customerLoans.length > 0 && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                        <span style={{ fontSize: '0.82rem', color: '#94a3b8', fontWeight: 700 }}>Contrato(s):</span>
+                        {customerLoans.map(l => (
+                          <span 
+                            key={l.id}
+                            style={{
+                              backgroundColor: l.status === 'PAGADO' ? 'rgba(16, 185, 129, 0.2)' : 'rgba(245, 158, 11, 0.2)',
+                              color: l.status === 'PAGADO' ? '#34d399' : '#f59e0b',
+                              border: `1.5px solid ${l.status === 'PAGADO' ? '#10b981' : '#f59e0b'}`,
+                              borderRadius: '6px',
+                              padding: '2px 8px',
+                              fontSize: '0.82rem',
+                              fontWeight: 800,
+                              fontFamily: 'monospace'
+                            }}
+                          >
+                            {l.code}
+                          </span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -250,14 +279,27 @@ export const CustomerList: React.FC<CustomerListProps> = ({
                       style={{ padding: '10px 14px' }}
                       title="Eliminar cliente"
                       onClick={() => {
-                        if (window.confirm(`¿Está seguro de eliminar al cliente "${customer.fullName}"?\n\nEsta acción no se puede deshacer.`)) {
-                          const res = deleteCustomer(customer.id);
-                          if (!res.success) {
-                            alert(res.message);
-                          } else {
-                            alert('Cliente eliminado correctamente.');
+                        requestAdminAuth({
+                          title: 'Eliminar Cliente',
+                          message: `¿Está seguro de eliminar al cliente "${customer.fullName}"?\n\nEsta acción es irreversible y borrará su registro.\nPor favor ingrese su código de Administrador para confirmar:`,
+                          confirmLabel: 'Confirmar y Eliminar',
+                          onSuccess: () => {
+                            const res = deleteCustomer(customer.id);
+                            if (!res.success) {
+                              showDialog({
+                                type: 'danger',
+                                title: 'No se pudo eliminar',
+                                message: res.message || 'Error al eliminar cliente'
+                              });
+                            } else {
+                              showDialog({
+                                type: 'success',
+                                title: 'Cliente Eliminado',
+                                message: 'Cliente eliminado correctamente con autorización de Administrador.'
+                              });
+                            }
                           }
-                        }
+                        });
                       }}
                     >
                       <Trash2 size={18} />

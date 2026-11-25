@@ -120,6 +120,7 @@ export interface PawnLoan {
   customerAddress?: string;
   customerPhone?: string;
   item: PledgeItem;
+  items?: PledgeItem[]; // Lista de todas las prendas registradas (1, 2, 3 o más prendas)
   
   // Términos Financieros
   loanAmount: number; // Capital prestado

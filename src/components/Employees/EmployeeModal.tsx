@@ -16,7 +16,7 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   employee,
   mode
 }) => {
-  const { addEmployee, updateEmployee } = usePawn();
+  const { addEmployee, updateEmployee, showDialog } = usePawn();
 
   const [formData, setFormData] = useState<{
     fullName: string;
@@ -69,15 +69,27 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.fullName.trim() || !formData.dni.trim() || !formData.phone.trim()) {
-      alert('Nombre, Carnet de Identidad (CI) y Teléfono son requeridos.');
+      showDialog({
+        type: 'warning',
+        title: 'Campos requeridos',
+        message: 'Nombre, Carnet de Identidad (CI) y Teléfono son requeridos.'
+      });
       return;
     }
     if (!formData.workSchedule.trim()) {
-      alert('Debe especificar el horario de trabajo del empleado.');
+      showDialog({
+        type: 'warning',
+        title: 'Horario requerido',
+        message: 'Debe especificar el horario de trabajo del empleado.'
+      });
       return;
     }
     if (!formData.primaryDuties.trim()) {
-      alert('Debe especificar las tareas principales y lo más necesario que debe hacer el empleado.');
+      showDialog({
+        type: 'warning',
+        title: 'Tareas requeridas',
+        message: 'Debe especificar las tareas principales y lo más necesario que debe hacer el empleado.'
+      });
       return;
     }
 
@@ -92,7 +104,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         notes: formData.notes.trim(),
         status: formData.status,
       });
-      alert('Empleado registrado exitosamente.');
+      showDialog({
+        type: 'success',
+        title: 'Empleado Registrado',
+        message: 'Empleado registrado exitosamente.'
+      });
       onClose();
     } else if (mode === 'edit' && employee) {
       updateEmployee(employee.id, {
@@ -105,7 +121,11 @@ export const EmployeeModal: React.FC<EmployeeModalProps> = ({
         notes: formData.notes.trim(),
         status: formData.status,
       });
-      alert('Datos del empleado actualizados correctamente.');
+      showDialog({
+        type: 'success',
+        title: 'Empleado Actualizado',
+        message: 'Datos del empleado actualizados correctamente.'
+      });
       onClose();
     }
   };

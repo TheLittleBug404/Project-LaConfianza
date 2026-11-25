@@ -392,19 +392,25 @@ export const TicketModal: React.FC<TicketModalProps> = ({
                   </tr>
                 </thead>
                 <tbody>
-                  <tr style={{ height: '28px' }}>
-                    <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center', fontWeight: 700 }}>1</td>
-                    <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 800, textTransform: 'uppercase' }}>
-                      {loan.item.name}
-                    </td>
-                    <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center' }}>
-                      {loan.item.condition}
-                    </td>
-                    <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontSize: '9px' }}>
-                      {loan.item.code && <div style={{ fontWeight: 700 }}>CÓD: {loan.item.code}</div>}
-                      <div>{loan.item.serialNumber || 'S/N - REGISTRADO EN BÓVEDA'}</div>
-                    </td>
-                  </tr>
+                  {(loan.items && loan.items.length > 0 ? loan.items : [loan.item]).map((it, idx) => (
+                    <tr key={it.id || idx} style={{ height: '28px' }}>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center', fontWeight: 700 }}>
+                        {idx + 1}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontWeight: 800, textTransform: 'uppercase' }}>
+                        {it.name}
+                        {it.description && <div style={{ fontSize: '8px', color: '#4b5563', textTransform: 'none', fontWeight: 'normal' }}>{it.description}</div>}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', textAlign: 'center' }}>
+                        {it.condition}
+                      </td>
+                      <td style={{ border: '1px solid #000000', padding: '4px 6px', fontFamily: 'monospace', fontSize: '9px' }}>
+                        {it.code && <div style={{ fontWeight: 700 }}>CÓD: {it.code}</div>}
+                        <div>{it.serialNumber || 'S/N - REGISTRADO EN BÓVEDA'}</div>
+                        <div style={{ fontWeight: 700, color: '#16a34a' }}>Avalúo: Bs. {it.appraisalValue}</div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
 

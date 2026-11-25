@@ -14,6 +14,7 @@ const STORAGE_KEYS = {
   PAYMENTS: 'nelly_pawn_payments',
   BUDGET: 'nelly_pawn_monthly_budget',
   EMPLOYEES: 'nelly_pawn_employees',
+  ADMIN_PASSWORD: 'nelly_pawn_admin_password',
 };
 
 // Conversor de clientes entre Supabase (snake_case) y TypeScript (camelCase)
@@ -234,7 +235,6 @@ export const StorageService = {
     localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(customers));
     localDb.saveCustomers(customers);
 
-    // Sincronizar en segundo plano con Supabase con log de depuración
     try {
       const dbPayload = customers.map(mapCustomerToDb);
       const { data, error } = await supabase.from('clientes').upsert(dbPayload, { onConflict: 'id' }).select();
@@ -245,6 +245,23 @@ export const StorageService = {
       }
     } catch (err) {
       console.error('❌ Excepción conectando con Supabase:', err);
+    }
+  },
+
+  deleteCustomer: async (id: string) => {
+    const current = StorageService.getCustomers().filter(c => c.id !== id);
+    localStorage.setItem(STORAGE_KEYS.CUSTOMERS, JSON.stringify(current));
+    localDb.saveCustomers(current);
+
+    try {
+      const { error } = await supabase.from('clientes').delete().eq('id', id);
+      if (error) {
+        console.error('❌ Error eliminando cliente en Supabase:', error.message, error.details || '');
+      } else {
+        console.log('✅ Cliente eliminado de Supabase con éxito:', id);
+      }
+    } catch (err) {
+      console.error('❌ Excepción eliminando cliente en Supabase:', err);
     }
   },
 
@@ -283,15 +300,61 @@ export const StorageService = {
     }
   },
 
-  saveLoans: (loans: PawnLoan[]) => {
+  saveLoans: async (loans: PawnLoan[]) => {
     localStorage.setItem(STORAGE_KEYS.LOANS, JSON.stringify(loans));
     localDb.saveLoans(loans);
 
-    // Sincronizar prendas y préstamos con Supabase
-    const dbPayload = loans.map(mapLoanToDb);
-    supabase.from('prestamos').upsert(dbPayload).then(({ error }) => {
-      if (error) console.warn('Aviso sincronizando préstamos con Supabase:', error.message);
-    });
+    try {
+      // 1. Primero asegurar que las prendas existan en la tabla prendas (integridad referencial)
+      // Se guardan todas las prendas (individuales o múltiples por préstamo)
+      const prendasPayload: any[] = [];
+      loans.forEach(l => {
+        if (l.items && l.items.length > 0) {
+          l.items.forEach((it, idx) => {
+            prendasPayload.push({
+              id: it.id || `item-${l.id}-${idx}`,
+              codigo: it.code || `PRD-${l.id.slice(-6)}-${idx + 1}`,
+              categoria_id: 'cat-joyeria-oro',
+              nombre: it.name || 'Prenda en Garantía',
+              descripcion: it.description || null,
+              numero_serie: it.serialNumber || null,
+              condicion: it.condition || 'BUENO',
+              valor_tasacion: it.appraisalValue || 0,
+              ubicacion_almacen: it.storageLocation || 'Bóveda Principal',
+              estado_prenda: it.status || 'EN_CUSTODIA'
+            });
+          });
+        } else if (l.item) {
+          prendasPayload.push({
+            id: l.item.id || l.prendaId || ('item-' + l.id),
+            codigo: l.code || l.receiptCode || ('PRD-' + l.id),
+            categoria_id: 'cat-joyeria-oro',
+            nombre: l.item.name || 'Prenda en Garantía',
+            descripcion: l.item.description || null,
+            numero_serie: l.item.serialNumber || null,
+            condicion: l.item.condition || 'BUENO',
+            valor_tasacion: l.item.appraisalValue || l.loanAmount,
+            ubicacion_almacen: l.item.storageLocation || 'Bóveda Principal',
+            estado_prenda: l.item.status || 'EN_CUSTODIA'
+          });
+        }
+      });
+
+      if (prendasPayload.length > 0) {
+        await supabase.from('prendas').upsert(prendasPayload, { onConflict: 'id' });
+      }
+
+      // 2. Guardar el préstamo
+      const dbPayload = loans.map(mapLoanToDb);
+      const { data, error } = await supabase.from('prestamos').upsert(dbPayload, { onConflict: 'id' }).select();
+      if (error) {
+        console.error('❌ Error al guardar préstamo en Supabase:', error.message, error.details || '');
+      } else {
+        console.log('✅ Préstamo sincronizado en Supabase con éxito:', data);
+      }
+    } catch (err) {
+      console.error('❌ Excepción guardando préstamos:', err);
+    }
   },
 
   // Pagos y Movimientos
@@ -325,14 +388,21 @@ export const StorageService = {
     }
   },
 
-  savePayments: (payments: PaymentTransaction[]) => {
+  savePayments: async (payments: PaymentTransaction[]) => {
     localStorage.setItem(STORAGE_KEYS.PAYMENTS, JSON.stringify(payments));
     localDb.savePayments(payments);
 
-    const dbPayload = payments.map(mapPaymentToDb);
-    supabase.from('pagos').upsert(dbPayload).then(({ error }) => {
-      if (error) console.warn('Aviso sincronizando pagos con Supabase:', error.message);
-    });
+    try {
+      const dbPayload = payments.map(mapPaymentToDb);
+      const { data, error } = await supabase.from('pagos').upsert(dbPayload, { onConflict: 'id' }).select();
+      if (error) {
+        console.error('❌ Error al guardar pagos en Supabase:', error.message, error.details || '');
+      } else {
+        console.log('✅ Pago sincronizado en Supabase con éxito:', data);
+      }
+    } catch (err) {
+      console.error('❌ Excepción guardando pagos:', err);
+    }
   },
 
   // Empleados
@@ -367,14 +437,33 @@ export const StorageService = {
     }
   },
 
-  saveEmployees: (employees: Employee[]) => {
+  saveEmployees: async (employees: Employee[]) => {
     localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(employees));
     localDb.saveEmployees(employees);
 
-    const dbPayload = employees.map(mapEmployeeToDb);
-    supabase.from('empleados').upsert(dbPayload).then(({ error }) => {
-      if (error) console.warn('Aviso sincronizando empleados con Supabase:', error.message);
-    });
+    try {
+      const dbPayload = employees.map(mapEmployeeToDb);
+      await supabase.from('empleados').upsert(dbPayload, { onConflict: 'id' });
+    } catch (err) {
+      console.error('❌ Excepción guardando empleados:', err);
+    }
+  },
+
+  deleteEmployee: async (id: string) => {
+    const current = StorageService.getEmployees().filter(e => e.id !== id);
+    localStorage.setItem(STORAGE_KEYS.EMPLOYEES, JSON.stringify(current));
+    localDb.saveEmployees(current);
+
+    try {
+      const { error } = await supabase.from('empleados').delete().eq('id', id);
+      if (error) {
+        console.error('❌ Error eliminando empleado en Supabase:', error.message, error.details || '');
+      } else {
+        console.log('✅ Empleado eliminado de Supabase con éxito:', id);
+      }
+    } catch (err) {
+      console.error('❌ Excepción eliminando empleado en Supabase:', err);
+    }
   },
 
   // Fondo Mensual
@@ -434,6 +523,36 @@ export const StorageService = {
       payments: SEED_PAYMENTS, 
       employees: SEED_EMPLOYEES 
     };
+  },
+
+  // Contraseña de Administrador
+  getAdminPassword: (): string => {
+    return localStorage.getItem(STORAGE_KEYS.ADMIN_PASSWORD) || '1234';
+  },
+
+  fetchAdminPasswordAsync: async (): Promise<string> => {
+    try {
+      const { data, error } = await supabase.from('configuracion').select('valor').eq('clave', 'admin_password').single();
+      if (!error && data && data.valor) {
+        const val = String(data.valor);
+        localStorage.setItem(STORAGE_KEYS.ADMIN_PASSWORD, val);
+        return val;
+      }
+      return StorageService.getAdminPassword();
+    } catch {
+      return StorageService.getAdminPassword();
+    }
+  },
+
+  saveAdminPassword: (newPass: string) => {
+    localStorage.setItem(STORAGE_KEYS.ADMIN_PASSWORD, newPass);
+    supabase.from('configuracion').upsert({
+      clave: 'admin_password',
+      valor: newPass,
+      actualizado_el: new Date().toISOString()
+    }).then(({ error }) => {
+      if (error) console.warn('Aviso sincronizando contraseña con Supabase:', error.message);
+    });
   },
 
   // Exportar copia de seguridad
